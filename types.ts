@@ -68,6 +68,8 @@ export interface Connection {
     id: string;
     sourceId: string;
     targetId: string;
+    sourceSide: 'left' | 'right';
+    targetSide: 'left' | 'right';
 }
 
 export interface ExportedTrack {

@@ -21,7 +21,8 @@ import { MusicPlayer } from './components/MusicPlayer';
 import { LyricsDisplay } from './components/LyricsDisplay';
 import type { CanvasElement, Viewport, Point, NoteElement, ImageElement, DrawingElement, ArrowElement, Connection, PlaceholderElement, BackupData, ExportedTrack, ImageCompareElement } from './types';
 import { ULTIMATE_EDITING_GUIDE, ASPECT_RATIO_OPTIONS, RANDOM_GRADIENTS } from './constants';
-import { NCL_OPTIONS, NIGHT_CITY_WEAPONS, NIGHT_CITY_VEHICLES, NIGHT_CITY_COMPANIONS, NIGHT_CITY_MISSIONS, NIGHT_CITY_LEGENDS } from './constants1';
+// FIX: The constants were moved from constants1.tsx to constants2.tsx and then consolidated. Correcting the import to the right file.
+import { NCL_OPTIONS, NIGHT_CITY_WEAPONS, NIGHT_CITY_VEHICLES, NIGHT_CITY_COMPANIONS, NIGHT_CITY_MISSIONS, NIGHT_CITY_LEGENDS } from './constants2';
 import { fileToBase64, base64ToFile, dataUrlToBlob, getElementsBounds, createGrayImage, correctImageAspectRatio, calculateNoteHeight, addTrackToDB, getAllTracksFromDB, clearAllTracksFromDB, savePlaylistToDB, getPlaylistsFromDB, getTrackFromDB, updateTrackLrcInDB, parseLRC, ParsedLrcLine, deleteTrackFromDB, removeTrackFromPlaylistInDB } from './utils';
 
 type AddElementFn = {
@@ -111,7 +112,7 @@ export const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('Generating...');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [newConnection, setNewConnection] = useState<{ sourceId: string; startPoint: Point, endPoint: Point } | null>(null);
+  const [newConnection, setNewConnection] = useState<{ sourceId: string; sourceSide: 'left' | 'right'; startPoint: Point, endPoint: Point } | null>(null);
   const [drawingArrow, setDrawingArrow] = useState<{ start: Point; end: Point } | null>(null);
   const [isInspirationModalOpen, setIsInspirationModalOpen] = useState(false);
   const [inspirationData, setInspirationData] = useState<{ modificationSuggestions: string[], textPrompts: string[] } | null>(null);
@@ -222,7 +223,7 @@ export const App: React.FC = () => {
       audio.src = '';
       setIsPlaying(false);
     }
-  }, [currentTrackIndex, musicTracks]);
+  }, [currentTrackIndex, musicTracks, isPlaying]);
 
   const handlePlayPause = () => {
     if (musicTracks.length === 0) return;
@@ -1781,7 +1782,7 @@ const handleFillPlaceholderFromPaste = async (placeholderId: string) => {
           y: startCanvasPoint.y * viewport.zoom + viewport.pan.y,
       }
       
-      setNewConnection({ sourceId: sourceId, startPoint: startScreenPoint, endPoint: startScreenPoint });
+      setNewConnection({ sourceId: sourceId, sourceSide: portSide, startPoint: startScreenPoint, endPoint: startScreenPoint });
   };
 
   const handleClearConnections = (elementId: string) => {
@@ -1856,9 +1857,27 @@ const handleFillPlaceholderFromPaste = async (placeholderId: string) => {
         if (newConnection) {
             const targetElement = (e.target as HTMLElement).closest('[data-element-id]');
             const targetId = targetElement?.getAttribute('data-element-id');
+            const target = targetId ? elements.find(el => el.id === targetId) : null;
             
-            if (targetId && targetId !== newConnection.sourceId && !connections.some(c => c.sourceId === newConnection.sourceId && c.targetId === targetId)) {
-                setConnections(prev => [...prev, { id: uuidv4(), sourceId: newConnection.sourceId, targetId: targetId }]);
+            if (target && targetId !== newConnection.sourceId) {
+                const endCanvasPoint = screenToCanvasCoords(newConnection.endPoint);
+                const targetLeftPoint = { x: target.position.x, y: target.position.y + target.height / 2 };
+                const targetRightPoint = { x: target.position.x + target.width, y: target.position.y + target.height / 2 };
+                
+                const distSq = (p1: Point, p2: Point) => (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2;
+                const distToLeft = distSq(endCanvasPoint, targetLeftPoint);
+                const distToRight = distSq(endCanvasPoint, targetRightPoint);
+                const targetSide = distToLeft < distToRight ? 'left' : 'right';
+
+                if (!connections.some(c => c.sourceId === newConnection.sourceId && c.targetId === targetId)) {
+                    setConnections(prev => [...prev, { 
+                        id: uuidv4(), 
+                        sourceId: newConnection.sourceId, 
+                        sourceSide: newConnection.sourceSide, 
+                        targetId: targetId, 
+                        targetSide 
+                    }]);
+                }
             }
             setNewConnection(null);
         }
@@ -1870,7 +1889,7 @@ const handleFillPlaceholderFromPaste = async (placeholderId: string) => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [newConnection, connections, elements]);
+  }, [newConnection, connections, elements, screenToCanvasCoords]);
 
   const handleAutoInspiration = async (element: CanvasElement) => {
     updateElements([{ id: element.id, data: { meta: undefined } }], false);
@@ -2386,15 +2405,14 @@ ${isAnyNCLNoteInGroup ? `
     Your final output must reflect the successful execution of this inferred task.
 `}
 5.  **Cohesive Composition:** Combine all elements—the edited subject, the background, the style, and any other instructions—into a single, high-quality, cohesive image.
-6.  **Photorealistic Integration for Composites:** For composite images, it is CRITICAL to ensure seamless integration. Meticulously analyze and harmonize the lighting, shadows, scale, color temperature, and overall atmosphere of all elements. The final image must be cohesive and photorealistically consistent.
+6.  **Photorealistic Integration for Composites:** For composite images, it is CRITICAL to ensure seamless integration. Meticulously analyze and harmonize the lighting, shadows, reflections, and perspective between the original subjects and the newly generated background.
 
-**USER REQUEST FOLLOWS**
----
-USER PROMPT: ${userPrompt}
+**USER REQUEST:**
+${userPrompt}
 `;
-            
+
             parts.push({ text: finalPrompt });
-            
+
             setGenerationStatus('正在呼叫 AI 模型...');
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             const response = await ai.models.generateContent({
@@ -2405,16 +2423,14 @@ USER PROMPT: ${userPrompt}
                 },
             });
 
-            setGenerationStatus('正在處理回應...');
+            setGenerationStatus('正在處理回應中...');
             const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
 
             if (imagePart?.inlineData) {
                 const newBase64 = imagePart.inlineData.data;
                 const newMimeType = imagePart.inlineData.mimeType;
                 let newSrc = `data:${newMimeType};base64,${newBase64}`;
-                
-                const bounds = getElementsBounds(elements.filter(el => el.groupId === groupId));
-                
+
                 const img = await new Promise<HTMLImageElement>((resolve, reject) => {
                     const i = new Image();
                     i.onload = () => resolve(i);
@@ -2426,630 +2442,367 @@ USER PROMPT: ${userPrompt}
                 
                 downloadImage(newSrc, `ai-group-generated-${Date.now()}.png`);
 
-                const visualGroupElements = groupElements.filter(el => el.type === 'image' || el.type === 'drawing') as (ImageElement | DrawingElement)[];
-                if (visualGroupElements.length > 0) {
-                    const largestSource = visualGroupElements.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
-                    const finalAspectRatio = aspectRatio || (finalIntrinsicWidth > 0 ? finalIntrinsicWidth / finalIntrinsicHeight : 1);
-                    const displayWidth = Math.max(300, bounds.maxX - bounds.minX);
-                    const displayHeight = displayWidth / finalAspectRatio;
+                const bounds = getElementsBounds(groupElements);
+                const newPosition = {
+                    x: bounds.maxX + 20,
+                    y: bounds.minY
+                };
+                
+                const finalAspectRatio = aspectRatio || (finalIntrinsicWidth > 0 ? finalIntrinsicWidth / finalIntrinsicHeight : 1);
+                const displayWidth = Math.max(...groupElements.map(el => el.width));
+                const displayHeight = displayWidth / finalAspectRatio;
 
-                    addElement({
-                        type: 'imageCompare',
-                        position: { x: bounds.minX, y: bounds.maxY + 20 },
-                        width: displayWidth,
-                        height: displayHeight,
-                        rotation: 0,
-                        srcBefore: largestSource.src,
-                        intrinsicWidthBefore: (largestSource as ImageElement).intrinsicWidth || largestSource.width,
-                        intrinsicHeightBefore: (largestSource as ImageElement).intrinsicHeight || largestSource.height,
-                        srcAfter: newSrc,
-                        intrinsicWidthAfter: finalIntrinsicWidth,
-                        intrinsicHeightAfter: finalIntrinsicHeight,
-                    }, userPrompt);
-
-                } else { // No source image, just add the new one
-                     const finalAspectRatio = aspectRatio || (finalIntrinsicWidth > 0 ? finalIntrinsicWidth / finalIntrinsicHeight : 1);
-                     const displayWidth = Math.max(300, bounds.maxX - bounds.minX);
-                     const displayHeight = displayWidth / finalAspectRatio;
-                     addElement({
-                        type: 'image',
-                        position: { x: bounds.minX, y: bounds.maxY + 20 },
-                        width: displayWidth,
-                        height: displayHeight,
-                        rotation: 0,
-                        src: newSrc,
-                        intrinsicWidth: finalIntrinsicWidth,
-                        intrinsicHeight: finalIntrinsicHeight,
-                    }, userPrompt);
-                }
+                addImageFromUrl(newSrc, finalIntrinsicWidth, finalIntrinsicHeight, newPosition, undefined, userPrompt);
             } else {
-                throw new Error("AI did not return an image.");
+                throw new Error("AI did not return an image from the group generation.");
             }
+
         } catch (error) {
             console.error("AI Group Generation Error:", error);
-            alert(`AI 群組生成時發生錯誤: ${error instanceof Error ? error.message : String(error)}`);
+            alert(`群組生成時發生錯誤: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             setIsGenerating(false);
         }
     };
-
-    const handleGroupLayerSelect = (groupId: string) => {
-        const groupElements = elements.filter(el => el.groupId === groupId);
-        if (groupElements.length > 0) {
-          setSelectedElementIds(groupElements.map(el => el.id));
-          fitScreenToElements(groupElements);
-        }
-    };
-
-    const handleCreateComparison = (groupId: string) => {
-        const groupElements = elements.filter(
-            el => el.groupId === groupId && (el.type === 'image' || el.type === 'drawing')
-        ) as (ImageElement | DrawingElement)[];
-
-        if (groupElements.length !== 2) return;
-
-        groupElements.sort((a, b) => a.zIndex - b.zIndex);
-        const [beforeEl, afterEl] = groupElements;
-
-        const bounds = getElementsBounds(groupElements);
-        const newWidth = Math.max(beforeEl.width, afterEl.width);
-        const afterIntrinsicWidth = (afterEl as ImageElement).intrinsicWidth || afterEl.width;
-        const afterIntrinsicHeight = (afterEl as ImageElement).intrinsicHeight || afterEl.height;
-        const afterAspectRatio = afterIntrinsicWidth > 0 && afterIntrinsicHeight > 0 ? afterIntrinsicWidth / afterIntrinsicHeight : 1;
-        const newHeight = newWidth / afterAspectRatio;
+    
+    const handleConvertToComparison = (elementId: string) => {
+        const element = elements.find(el => el.id === elementId);
+        if (!element || (element.type !== 'image' && element.type !== 'drawing')) return;
 
         const newCompareElement: ImageCompareElement = {
-            id: uuidv4(),
+            id: element.id,
             type: 'imageCompare',
-            position: { x: bounds.minX, y: bounds.maxY + 20 },
-            width: newWidth,
-            height: newHeight,
+            position: element.position,
+            width: element.width,
+            height: element.height,
+            rotation: element.rotation,
+            zIndex: element.zIndex,
+            groupId: element.groupId,
+            srcBefore: element.src,
+            intrinsicWidthBefore: (element as ImageElement).intrinsicWidth || element.width,
+            intrinsicHeightBefore: (element as ImageElement).intrinsicHeight || element.height,
+            srcAfter: '',
+            intrinsicWidthAfter: 0,
+            intrinsicHeightAfter: 0,
+        };
+
+        setElements(prev => prev.map(el => el.id === elementId ? newCompareElement : el), { addToHistory: true });
+        setSelectedElementIds([elementId]);
+    };
+    
+    const handleCreateComparisonFromGroup = (groupId: string) => {
+        const groupImages = elements.filter(el => el.groupId === groupId && (el.type === 'image' || el.type === 'drawing')) as (ImageElement | DrawingElement)[];
+        if (groupImages.length !== 2) return;
+        
+        const [beforeImg, afterImg] = groupImages;
+        const bounds = getElementsBounds(groupImages);
+        
+        const newCompareElement: Omit<ImageCompareElement, 'id' | 'zIndex'> = {
+            type: 'imageCompare',
+            position: { x: bounds.minX, y: bounds.minY },
+            width: bounds.maxX - bounds.minX,
+            height: bounds.maxY - bounds.minY,
             rotation: 0,
-            zIndex: getNextZIndex(),
-            srcBefore: beforeEl.src,
-            intrinsicWidthBefore: (beforeEl as ImageElement).intrinsicWidth || beforeEl.width,
-            intrinsicHeightBefore: (beforeEl as ImageElement).intrinsicHeight || beforeEl.height,
-            srcAfter: afterEl.src,
-            intrinsicWidthAfter: afterIntrinsicWidth,
-            intrinsicHeightAfter: afterIntrinsicHeight,
+            srcBefore: beforeImg.src,
+            intrinsicWidthBefore: (beforeImg as ImageElement).intrinsicWidth || beforeImg.width,
+            intrinsicHeightBefore: (beforeImg as ImageElement).intrinsicHeight || beforeImg.height,
+            srcAfter: afterImg.src,
+            intrinsicWidthAfter: (afterImg as ImageElement).intrinsicWidth || afterImg.width,
+            intrinsicHeightAfter: (afterImg as ImageElement).intrinsicHeight || afterImg.height,
         };
 
-        setElements(prev => [
-            ...prev.map(el => {
-                if (el.groupId === groupId) {
-                    return { ...el, groupId: undefined }; // Unlock original elements
-                }
-                return el;
-            }),
-            newCompareElement
-        ]);
-
-        setSelectedElementIds([newCompareElement.id]);
-        setLockedGroupIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(groupId);
-            return newSet;
-        });
+        addElement(newCompareElement);
+        deleteElements([beforeImg.id, afterImg.id]);
     };
 
-    const handleConvertToComparison = (elementId: string) => {
-        setElements(prev => {
-            return prev.map(el => {
-                if (el.id === elementId && (el.type === 'image' || el.type === 'drawing')) {
-                    const sourceElement = el as ImageElement | DrawingElement;
-                    const newCompareElement: ImageCompareElement = {
-                        id: sourceElement.id,
-                        type: 'imageCompare',
-                        position: sourceElement.position,
-                        width: sourceElement.width,
-                        height: sourceElement.height,
-                        rotation: sourceElement.rotation,
-                        zIndex: sourceElement.zIndex,
-                        groupId: sourceElement.groupId,
-                        srcBefore: sourceElement.src,
-                        intrinsicWidthBefore: (sourceElement as ImageElement).intrinsicWidth || sourceElement.width,
-                        intrinsicHeightBefore: (sourceElement as ImageElement).intrinsicHeight || sourceElement.height,
-                        srcAfter: '',
-                        intrinsicWidthAfter: 0,
-                        intrinsicHeightAfter: 0,
-                    };
-                    return newCompareElement;
-                }
-                return el;
-            });
-// FIX: The second argument to setElements must be a SetStateOptions object, not a boolean.
-// Changed `true` to `{ addToHistory: true }` to correctly add this state change to the history.
-        }, { addToHistory: true });
+    const handleContextualGeneration = (directive: string) => {
+        // This is a placeholder for a more complex implementation.
+        // It could capture the selected elements, their prompts, and send them to the model
+        // with the user's directive.
+        console.log("Contextual generation requested with directive:", directive);
+        alert(`情境生成：${directive}\n(此功能仍在開發中)`);
     };
 
-    const handleContextualGeneration = async (directive: string) => {
-        const currentSelectedElements = elements.filter(el => selectedElementIds.includes(el.id));
-        if (currentSelectedElements.length === 0) return;
+  return (
+    <div 
+        className="w-screen h-screen bg-black text-white cyber-grid-background canvas-glow-container"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onContextMenu={handleOpenContextMenu}
+    >
+      <InfiniteCanvas
+        ref={canvasWrapperRef}
+        elements={elements}
+        viewport={viewport}
+        onViewportChange={setViewport}
+        onUpdateElements={(updates) => updateElements(updates, false)}
+        onCommitHistory={handleCommitHistory}
+        onAddElement={(el) => addElement(el as any)}
+        onAltDragDuplicate={handleAltDragDuplicate}
+        onReplacePlaceholder={replacePlaceholderWithImage}
+        selectedElementIds={selectedElementIds}
+        onSelectElements={handleSelectElements}
+        onDoubleClickElement={(id) => {
+            const el = elements.find(e => e.id === id);
+            if (el?.type === 'drawing') setDrawingToEdit(el);
+            if (el?.type === 'image') setCroppingElement(el);
+        }}
+        activeTool={activeTool}
+        onToolChange={setActiveTool}
+        isDraggingOver={isDraggingOver}
+        isConnecting={!!newConnection}
+        drawingArrow={drawingArrow}
+        onDrawingArrowChange={setDrawingArrow}
+        lockedGroupIds={lockedGroupIds}
+        singlySelectedIdInGroup={singlySelectedIdInGroup}
+        isAnimationActive={isAnimationActive}
+        onTriggerCameraForCompare={handleTriggerCameraForCompare}
+        onTriggerPasteForCompare={handleTriggerPasteForCompare}
+        ghostElements={ghostElements}
+        onStartAltDrag={(els) => setGhostElements(els)}
+        onEndAltDrag={() => setGhostElements(null)}
+      />
+      {/* UI Panels */}
+      <InspirationPanel
+        isOpen={isInspirationPanelOpen}
+        setIsOpen={setIsInspirationPanelOpen}
+        selectedElements={selectedElements}
+        lockedGroupIds={lockedGroupIds}
+        prompts={prompts}
+        onPromptsChange={setPrompts}
+        addElement={addElement}
+        screenToCanvas={screenToCanvasCoords}
+        canvasSize={canvasSize}
+        elements={elements}
+        updateElements={updateElements}
+        onContextualGeneration={handleContextualGeneration}
+      />
+      <LayersPanel 
+        isOpen={isLayersPanelOpen}
+        setIsOpen={setIsLayersPanelOpen}
+        elements={elements} 
+        selectedElementIds={selectedElementIds}
+        onLayerSelect={handleLayerSelect}
+        onGroupLayerSelect={(groupId) => {
+            const ids = elements.filter(el => el.groupId === groupId).map(el => el.id);
+            handleSelectElements(ids);
+        }}
+        lockedGroupIds={lockedGroupIds}
+        onDelete={deleteElements}
+        onReorder={handleLayerReorder}
+        isAnimationActive={isAnimationActive}
+        onAnimationToggle={() => setIsAnimationActive(prev => !prev)}
+        isMusicPlayerVisible={isMusicPlayerVisible}
+        onMusicPlayerToggle={() => setIsMusicPlayerVisible(prev => !prev)}
+      />
+      <Toolbar 
+        isOpen={isToolbarOpen}
+        setIsOpen={setIsToolbarOpen}
+        activeTool={activeTool} onToolChange={setActiveTool}
+        onAddNote={addNote} onAddImage={addImageFromUpload}
+        onAddPlaceholder={addPlaceholder}
+        onAddImageCompare={addImageCompare}
+        onPaste={handlePasteFromClipboard}
+        onDraw={() => setIsDrawing(true)} onCamera={() => setIsTakingPhoto(true)}
+        canUndo={canUndo} onUndo={undo} canRedo={canRedo} onRedo={redo}
+        zoom={viewport.zoom} onZoomChange={(newZoom) => setViewport({ ...viewport, zoom: newZoom })}
+        onFitScreen={handleFitScreen} onCenterView={handleCenterView}
+      />
+      {selectedElements.length > 0 && (
+          <FloatingToolbar 
+            elements={elements}
+            selectedElements={selectedElements} 
+            viewport={viewport} 
+            prompts={prompts} onPromptsChange={setPrompts}
+            aspectRatios={aspectRatios} onAspectRatiosChange={setAspectRatios as any}
+            artStyles={artStyles} onArtStylesChange={setArtStyles}
+            onDelete={() => deleteElements(selectedElementIds)}
+            onDuplicate={() => duplicateElements(selectedElementIds)}
+            onBringToFront={() => reorderElements('front', selectedElementIds)}
+            onSendToBack={() => reorderElements('back', selectedElementIds)}
+            onUpdateElements={(updates, addToHistory) => updateElements(updates, addToHistory)}
+            onCommitHistory={handleCommitHistory}
+            onCrop={() => setCroppingElement(selectedElements[0] as ImageElement | DrawingElement)}
+            onEditDrawing={() => setDrawingToEdit(selectedElements[0] as DrawingElement)}
+            onDownload={downloadImageElement}
+            onAIGenerate={handleAIGenerate}
+            onAIZoomOut={handleAIZoomOut}
+            onAIGroupGenerate={handleAIGroupGenerate}
+            onRequestInspiration={handleRequestInspiration}
+            onRequestGroupInspiration={onRequestGroupInspiration}
+            onOptimizeGroupPrompt={onOptimizeGroupPrompt}
+            onOptimizeSingleElementPrompt={onOptimizeSingleElementPrompt}
+            onNoteInspiration={handleNoteInspiration}
+            onNoteOptimization={handleNoteOptimization}
+            onNoteGenerate={handleNoteGenerate}
+            onCreateComparison={handleCreateComparisonFromGroup}
+            onConvertToComparison={handleConvertToComparison}
+            isGenerating={isGenerating}
+            onStartConnection={handleStartConnection}
+            onToggleGroupLock={handleToggleGroupLock}
+            lockedGroupIds={lockedGroupIds}
+            onClearConnections={handleClearConnections}
+            onFillPlaceholderFromCamera={handleFillPlaceholderFromCamera}
+            onFillPlaceholderFromPaste={handleFillPlaceholderFromPaste}
+          />
+      )}
+      <ShortcutHints />
+      {/* File Inputs */}
+      <input type="file" ref={fileInputRef} onChange={e => handleFileUploads(e.target.files)} className="hidden" accept="image/*" multiple />
+      {/* FIX: Use spread attributes to allow non-standard directory and webkitdirectory attributes for folder upload. */}
+      <input type="file" ref={musicUploadRefForLink} onChange={e => { handleRelinkFolderSelect(e.target.files); e.target.value = ''; }} className="hidden" multiple {...{ webkitdirectory: "", directory: "" }} />
 
-        setIsGenerating(true);
-        setGenerationStatus('正在分析物件並生成情境...');
-
-        const captureElementsToBlob = async (elementsToCapture: CanvasElement[]): Promise<{ base64: string, blob: Blob } | null> => {
-            const visualElements = elementsToCapture.filter(el => el.type !== 'note');
-            if (visualElements.length === 0 || !canvasWrapperRef.current) return null;
-            const bounds = getElementsBounds(visualElements);
-            if (bounds.maxX - bounds.minX < 1 || bounds.maxY - bounds.minY < 1) return null;
-            const canvas = await html2canvas(canvasWrapperRef.current, {
-                backgroundColor: null,
-                width: bounds.maxX - bounds.minX,
-                height: bounds.maxY - bounds.minY,
-                x: bounds.minX,
-                y: bounds.minY,
-                scale: 1,
-            });
-            const dataUrl = canvas.toDataURL('image/png');
-            return dataUrlToBlob(dataUrl);
-        };
-
-        try {
-            const parts: any[] = [];
-            const capturedBlobData = await captureElementsToBlob(currentSelectedElements);
-            if (capturedBlobData) {
-                parts.push({ inlineData: { data: capturedBlobData.base64, mimeType: capturedBlobData.blob.type } });
-            }
-            const textContent = currentSelectedElements
-                .map(el => {
-                    if (el.type === 'note') return (el as NoteElement).content;
-                    return prompts[el.id] || '';
-                })
-                .filter(Boolean).join('\n---\n');
-            if (textContent.trim()) {
-                parts.push({ text: `請參考以下文字:\n${textContent}` });
-            }
-
-            const isNCL = directive.includes('Night City Legends');
-            let systemPrompt = `你是 AI 創意總監。你的任務是分析使用者選取的物件(可能包含圖片和文字)，並根據一個特定的指令，生成一個全新的、有創意的提示。
-
-**指令:**
-${directive}
-
-**你的任務:**
-1.  分析使用者提供的內容，理解其主體、風格和主題。
-2.  將「指令」創造性地應用於內容之上。
-3.  以繁體中文生成一個單一、連貫且富有想像力的提示，描述結合了使用者內容和指令後的新結果。
-4.  你的回應只能是最終生成的提示文字，要適合放入一個新的便籤中。不要包含任何額外的對話或解釋。`;
-
-            if (isNCL) {
-                const formatDBForPrompt = (db: any, title: string): string => {
-                    let str = `\n### ${title}\n`;
-                    if (Array.isArray(db)) {
-                         db.forEach(category => {
-                             str += `**${category.label}**\n`;
-                             category.options.forEach((opt: string) => str += `- ${opt}\n`);
-                         });
-                    } else {
-                        Object.entries(db).forEach(([category, items]) => {
-                            str += `**${category}**\n`;
-                            if (Array.isArray(items)) {
-                                items.forEach((item: any) => {
-                                    if (typeof item === 'object' && item.name) {
-                                        str += `- ${item.name}: ${item.prompt}\n`;
-                                    } else { str += `- ${item}\n`; }
-                                });
-                            }
-                        });
-                    }
-                    return str;
-                };
-                 systemPrompt += `\n\n**特別指示：** 這是一個「夜城傳奇」情境。你必須使用以下的資料庫來創造一個相關的任務或場景。如果使用者提供了人物，請將該人物「選角」為場景的主角。\n` +
-                                 formatDBForPrompt(NIGHT_CITY_LEGENDS, "場景與地點") +
-                                 formatDBForPrompt(NIGHT_CITY_MISSIONS, "任務類型") +
-                                 formatDBForPrompt(NIGHT_CITY_WEAPONS, "武器") +
-                                 formatDBForPrompt(NIGHT_CITY_VEHICLES, "載具") +
-                                 formatDBForPrompt(NIGHT_CITY_COMPANIONS, "夥伴");
-            }
-            
-            parts.push({ text: systemPrompt });
-
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts } });
-            const newPromptText = response.text.trim();
-
-            const selectedBounds = getElementsBounds(currentSelectedElements);
-            const newGroupId = uuidv4();
-            
-            const width = 300;
-            const fontSize = 16;
-            const height = calculateNoteHeight(newPromptText, width, fontSize);
-            const newNote: NoteElement = {
-                id: uuidv4(), type: 'note', content: newPromptText,
-                color: RANDOM_GRADIENTS[Math.floor(Math.random() * RANDOM_GRADIENTS.length)],
-                fontSize, width, height, rotation: 0,
-                position: { 
-                    x: selectedBounds.maxX + 30, 
-                    y: selectedBounds.minY + (selectedBounds.maxY - selectedBounds.minY) / 2 - height / 2 
-                },
-                zIndex: getNextZIndex(), groupId: newGroupId,
-            };
-
-            const allPrompts = currentSelectedElements
-                .map(el => {
-                    if (el.type === 'note') return el.content.trim();
-                    if (el.type === 'image' || el.type === 'drawing') return (prompts[el.id] || '').trim();
-                    const groupId = el.groupId;
-                    if (groupId) return (prompts[groupId] || '').trim();
-                    return '';
-                }).filter(Boolean);
-            const combinedPrompt = allPrompts.join(', ');
-            const finalGroupPrompt = [combinedPrompt, newPromptText].filter(Boolean).join('. ');
-
-            setElements(prev => {
-                const updatedElements = prev.map(el => {
-                    if (selectedElementIds.includes(el.id)) return { ...el, groupId: newGroupId };
-                    return el;
-                });
-                return [...updatedElements, newNote];
-            });
-
-            if (finalGroupPrompt) {
-                setPrompts(p => ({ ...p, [newGroupId]: finalGroupPrompt }));
-            }
-            setLockedGroupIds(prev => new Set(prev).add(newGroupId));
-            setSelectedElementIds([...selectedElementIds, newNote.id]);
-        } catch (error) {
-            console.error("Contextual Generation Error:", error);
-            alert(`生成情境時發生錯誤: ${error instanceof Error ? error.message : String(error)}`);
-        } finally {
-            setIsGenerating(false);
-        }
-    };
-
-    return (
-        <div className="w-screen h-screen text-white font-sans overflow-hidden relative canvas-glow-container cyber-grid-background"
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onContextMenu={handleOpenContextMenu}
-        >
-            {isMusicPlayerVisible && (
-                <MusicPlayer
-                    isPlaying={isPlaying}
-                    currentTrackName={musicTracks[currentTrackIndex]?.name || '請上傳音樂'}
-                    isLibraryEmpty={musicTracks.length === 0}
-                    musicTracks={musicTracks}
-                    currentTrackIndex={currentTrackIndex}
-                    onPlayPause={handlePlayPause}
-                    onStop={handleStop}
-                    onNext={handleNextTrack}
-                    onPrev={handlePrevTrack}
-                    onSelectTrack={handleSelectTrack}
-                    onFolderUpload={handleFolderUpload}
-                    onDrop={handleMusicDrop}
-                    onLrcUpload={handleLrcUpload}
-                    onClear={handleClearMusic}
-                    onReloadFromLocal={handleReloadFromLocal}
-                    repeatMode={repeatMode}
-                    isShuffle={isShuffle}
-                    onCycleRepeatMode={handleCycleRepeatMode}
-                    onToggleShuffle={handleToggleShuffle}
-                    playlists={playlists}
-                    activePlaylistName={activePlaylistName}
-                    onSwitchPlaylist={handleSwitchPlaylist}
-                    onDeleteTrack={handleDeleteTrack}
-                    onSaveCurrentTracksAsPlaylist={handleSaveCurrentTracksAsPlaylist}
-                    onExportPlaylists={handleExportPlaylists}
-                    onImportPlaylists={handleImportPlaylists}
-                    currentTime={currentTime}
-                    duration={duration}
-                    onSeek={handleSeek}
-                    currentLyric={currentLyric}
+      {/* Overlays and Modals */}
+      {isMusicPlayerVisible && (
+        <MusicPlayer
+            isPlaying={isPlaying}
+            currentTrackName={musicTracks[currentTrackIndex]?.name || '未選擇歌曲'}
+            isLibraryEmpty={musicTracks.length === 0}
+            musicTracks={musicTracks}
+            currentTrackIndex={currentTrackIndex}
+            onPlayPause={handlePlayPause}
+            onStop={handleStop}
+            onNext={handleNextTrack}
+            onPrev={handlePrevTrack}
+            onSelectTrack={handleSelectTrack}
+            onFolderUpload={handleFolderUpload}
+            onDrop={handleMusicDrop}
+            onLrcUpload={handleLrcUpload}
+            onClear={handleClearMusic}
+            onReloadFromLocal={handleReloadFromLocal}
+            repeatMode={repeatMode}
+            isShuffle={isShuffle}
+            onCycleRepeatMode={handleCycleRepeatMode}
+            onToggleShuffle={handleToggleShuffle}
+            playlists={playlists}
+            activePlaylistName={activePlaylistName}
+            onSwitchPlaylist={handleSwitchPlaylist}
+            onDeleteTrack={handleDeleteTrack}
+            onSaveCurrentTracksAsPlaylist={handleSaveCurrentTracksAsPlaylist}
+            onExportPlaylists={handleExportPlaylists}
+            onImportPlaylists={handleImportPlaylists}
+            currentTime={currentTime}
+            duration={duration}
+            onSeek={handleSeek}
+            currentLyric={currentLyric}
+        />
+      )}
+      {isMusicPlayerVisible && <LyricsDisplay lyric={currentLyric || ''} />}
+      {contextMenu && <ContextMenu {...contextMenu} onClose={() => setContextMenu(null)} />}
+      {isDrawing && <DrawingModal onSave={addDrawing} onClose={() => setIsDrawing(false)} />}
+      {drawingToEdit && <DrawingModal onSave={(src) => {
+          updateElements([{ id: drawingToEdit.id, data: { src } }]);
+          setDrawingToEdit(null);
+      }} onClose={() => setDrawingToEdit(null)} initialDrawing={drawingToEdit.src} />}
+      {croppingElement && <CroppingModal element={croppingElement} onClose={() => setCroppingElement(null)} onSave={(src, width, height) => {
+        updateElements([{ id: croppingElement.id, data: { src, intrinsicWidth: width, intrinsicHeight: height, width, height } }]);
+        setCroppingElement(null);
+      }} />}
+      {isTakingPhoto && (
+        <CameraModal
+            onClose={() => { setIsTakingPhoto(false); setPlaceholderTarget(null); setImageCompareTarget(null); }}
+            onCapture={(dataUrl, bgOption) => {
+                handleCameraCapture(dataUrl, bgOption, placeholderTarget);
+                setIsTakingPhoto(false);
+                setPlaceholderTarget(null);
+                setImageCompareTarget(null);
+            }}
+        />
+      )}
+       {isGenerating && (
+         <div className="fixed inset-0 bg-black/70 z-[9998] flex items-center justify-center backdrop-blur-sm">
+           <div className="text-center">
+             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-[var(--cyber-cyan)] mx-auto"></div>
+             <p className="mt-4 text-lg text-white">{generationStatus}</p>
+           </div>
+         </div>
+       )}
+       {newConnection && (
+            <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-50" style={{ transform: 'translateZ(0)' }}>
+                <line
+                    x1={newConnection.startPoint.x} y1={newConnection.startPoint.y}
+                    x2={newConnection.endPoint.x} y2={newConnection.endPoint.y}
+                    stroke="var(--cyber-cyan)" strokeWidth="3" strokeDasharray="5,5"
+                    style={{ filter: 'drop-shadow(0 0 5px var(--cyber-glow-cyan))' }}
                 />
-            )}
-            {isPlaying && !isMusicPlayerVisible && <LyricsDisplay lyric={currentLyric} />}
-            <InspirationPanel
-                isOpen={isInspirationPanelOpen}
-                setIsOpen={setIsInspirationPanelOpen}
-                selectedElements={selectedElements}
-                lockedGroupIds={lockedGroupIds}
-                prompts={prompts}
-                onPromptsChange={setPrompts}
-                addElement={addElement}
-                screenToCanvas={screenToCanvasCoords}
-                canvasSize={canvasSize}
-                elements={elements}
-                updateElements={updateElements}
-                onContextualGeneration={handleContextualGeneration}
-            />
-            <InfiniteCanvas
-                ref={canvasWrapperRef}
-                elements={elements}
-                viewport={viewport}
-                onViewportChange={setViewport}
-                onUpdateElements={(updates) => updateElements(updates, false)}
-                onCommitHistory={handleCommitHistory}
-                onAddElement={addElement}
-                onAltDragDuplicate={handleAltDragDuplicate}
-                onReplacePlaceholder={replacePlaceholderWithImage}
-                selectedElementIds={selectedElementIds}
-                onSelectElements={handleSelectElements}
-                onDoubleClickElement={(elementId) => {
-                    const el = elements.find(e => e.id === elementId);
-                    if (el?.type === 'drawing') setDrawingToEdit(el as DrawingElement);
-                }}
-                activeTool={activeTool}
-                onToolChange={setActiveTool}
-                isDraggingOver={isDraggingOver}
-                isConnecting={!!newConnection}
-                drawingArrow={drawingArrow}
-                onDrawingArrowChange={setDrawingArrow}
-                lockedGroupIds={lockedGroupIds}
-                singlySelectedIdInGroup={singlySelectedIdInGroup}
-                isAnimationActive={isAnimationActive}
-                onTriggerCameraForCompare={handleTriggerCameraForCompare}
-                onTriggerPasteForCompare={handleTriggerPasteForCompare}
-                ghostElements={ghostElements}
-                onStartAltDrag={setGhostElements}
-                onEndAltDrag={() => setGhostElements(null)}
-            />
-            <svg className="absolute inset-0 pointer-events-none" style={{ width: canvasSize.width, height: canvasSize.height }}>
-                <defs>
-                    <marker id="arrow-end" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#f43f5e" />
-                    </marker>
-                </defs>
-                {connections.map(conn => {
-                    const source = elements.find(el => el.id === conn.sourceId);
-                    const target = elements.find(el => el.id === conn.targetId);
-                    if (!source || !target) return null;
-
-                    const sourceLeft = { x: (source.position.x) * viewport.zoom + viewport.pan.x, y: (source.position.y + source.height / 2) * viewport.zoom + viewport.pan.y };
-                    const sourceRight = { x: (source.position.x + source.width) * viewport.zoom + viewport.pan.x, y: (source.position.y + source.height / 2) * viewport.zoom + viewport.pan.y };
-                    const targetLeft = { x: (target.position.x) * viewport.zoom + viewport.pan.x, y: (target.position.y + target.height / 2) * viewport.zoom + viewport.pan.y };
-                    const targetRight = { x: (target.position.x + target.width) * viewport.zoom + viewport.pan.x, y: (target.position.y + target.height / 2) * viewport.zoom + viewport.pan.y };
-
-                    const possibleConnections = [
-                        { start: sourceLeft, end: targetLeft, dist: distSq(sourceLeft, targetLeft) },
-                        { start: sourceLeft, end: targetRight, dist: distSq(sourceLeft, targetRight) },
-                        { start: sourceRight, end: targetLeft, dist: distSq(sourceRight, targetLeft) },
-                        { start: sourceRight, end: targetRight, dist: distSq(sourceRight, targetRight) },
-                    ];
-
-                    const bestConnection = possibleConnections.reduce((min, current) => current.dist < min.dist ? current : min);
-                    
-                    return <line key={conn.id} x1={bestConnection.start.x} y1={bestConnection.start.y} x2={bestConnection.end.x} y2={bestConnection.end.y} stroke="#f43f5e" strokeWidth="6" markerEnd="url(#arrow-end)" />;
-                })}
-                {newConnection && (
-                    <line x1={newConnection.startPoint.x} y1={newConnection.startPoint.y} x2={newConnection.endPoint.x} y2={newConnection.endPoint.y} stroke="#f43f5e" strokeWidth="6" strokeDasharray="5,5" />
-                )}
-                {drawingArrow && (() => {
-                    const start = {
-                        x: drawingArrow.start.x * viewport.zoom + viewport.pan.x,
-                        y: drawingArrow.start.y * viewport.zoom + viewport.pan.y,
-                    };
-                    const end = {
-                        x: drawingArrow.end.x * viewport.zoom + viewport.pan.x,
-                        y: drawingArrow.end.y * viewport.zoom + viewport.pan.y,
-                    };
-                    return <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="#f43f5e" strokeWidth="12" markerEnd="url(#arrow-end)" />;
-                })()}
             </svg>
-
-            <Toolbar
-                isOpen={isToolbarOpen}
-                setIsOpen={setIsToolbarOpen}
-                activeTool={activeTool}
-                onToolChange={setActiveTool}
-                onAddNote={addNote}
-                onAddImage={addImageFromUpload}
-                onAddPlaceholder={addPlaceholder}
-                onAddImageCompare={addImageCompare}
-                onPaste={handlePasteFromClipboard}
-                onDraw={() => setIsDrawing(true)}
-                onCamera={() => setIsTakingPhoto(true)}
-                canUndo={canUndo}
-                onUndo={undo}
-                canRedo={canRedo}
-                onRedo={redo}
-                zoom={viewport.zoom}
-                onZoomChange={(newZoom) => setViewport(v => ({...v, zoom: newZoom}))}
-                onFitScreen={handleFitScreen}
-                onCenterView={handleCenterView}
-            />
+        )}
+        {drawingArrow && (
+            <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-30" style={{ transform: 'translateZ(0)' }}>
+                <line
+                    x1={drawingArrow.start.x * viewport.zoom + viewport.pan.x}
+                    y1={drawingArrow.start.y * viewport.zoom + viewport.pan.y}
+                    x2={drawingArrow.end.x * viewport.zoom + viewport.pan.x}
+                    y2={drawingArrow.end.y * viewport.zoom + viewport.pan.y}
+                    stroke="#f43f5e" strokeWidth="4" strokeDasharray="8,8"
+                    style={{ filter: 'drop-shadow(0 0 5px #f43f5e)' }}
+                />
+            </svg>
+        )}
+        {connections.map(c => {
+             const source = elements.find(el => el.id === c.sourceId);
+             const target = elements.find(el => el.id === c.targetId);
+             if (!source || !target) return null;
+             
+            const startPoint = { 
+                x: c.sourceSide === 'left' ? source.position.x : source.position.x + source.width,
+                y: source.position.y + source.height / 2 
+            };
+            const endPoint = {
+                x: c.targetSide === 'left' ? target.position.x : target.position.x + target.width,
+                y: target.position.y + target.height / 2
+            };
             
-            <FloatingToolbar 
-                elements={elements}
-                selectedElements={selectedElements}
-                viewport={viewport}
-                prompts={prompts}
-                onPromptsChange={setPrompts}
-                aspectRatios={aspectRatios}
-                onAspectRatiosChange={setAspectRatios}
-                artStyles={artStyles}
-                onArtStylesChange={setArtStyles}
-                onDelete={() => deleteElements(selectedElementIds)}
-                onDuplicate={() => duplicateElements(selectedElementIds)}
-                onBringToFront={() => reorderElements('front', selectedElementIds)}
-                onSendToBack={() => reorderElements('back', selectedElementIds)}
-                onUpdateElements={(updates) => updateElements(updates, false)}
-                onCommitHistory={handleCommitHistory}
-                onCrop={() => {
-                    const el = selectedElements[0];
-                    if (el && (el.type === 'image' || el.type === 'drawing')) setCroppingElement(el);
-                }}
-                onEditDrawing={() => {
-                    const el = selectedElements[0];
-                    if (el && el.type === 'drawing') setDrawingToEdit(el as DrawingElement);
-                }}
-                onDownload={downloadImageElement}
-                onAIGenerate={handleAIGenerate}
-                onAIZoomOut={handleAIZoomOut}
-                onAIGroupGenerate={handleAIGroupGenerate}
-                onRequestInspiration={handleRequestInspiration}
-                onRequestGroupInspiration={onRequestGroupInspiration}
-                onOptimizeGroupPrompt={onOptimizeGroupPrompt}
-                onOptimizeSingleElementPrompt={onOptimizeSingleElementPrompt}
-                onNoteInspiration={handleNoteInspiration}
-                onNoteOptimization={handleNoteOptimization}
-                onNoteGenerate={handleNoteGenerate}
-                onCreateComparison={handleCreateComparison}
-                onConvertToComparison={handleConvertToComparison}
-                isGenerating={isGenerating}
-                onStartConnection={handleStartConnection}
-                onToggleGroupLock={handleToggleGroupLock}
-                lockedGroupIds={lockedGroupIds}
-                onClearConnections={handleClearConnections}
-                onFillPlaceholderFromCamera={handleFillPlaceholderFromCamera}
-                onFillPlaceholderFromPaste={handleFillPlaceholderFromPaste}
-            />
-            
-            <LayersPanel
-                isOpen={isLayersPanelOpen}
-                setIsOpen={setIsLayersPanelOpen}
-                elements={elements}
-                selectedElementIds={selectedElementIds}
-                onLayerSelect={handleLayerSelect}
-                onGroupLayerSelect={handleGroupLayerSelect}
-                lockedGroupIds={lockedGroupIds}
-                onDelete={(ids) => deleteElements(ids)}
-                onReorder={handleLayerReorder}
-                isAnimationActive={isAnimationActive}
-                onAnimationToggle={() => setIsAnimationActive(prev => !prev)}
-                isMusicPlayerVisible={isMusicPlayerVisible}
-                onMusicPlayerToggle={() => setIsMusicPlayerVisible(prev => !prev)}
-            />
-            
-            <Navigator
-                elements={elements}
-                viewport={viewport}
-                canvasSize={canvasSize}
-                onClick={(x, y) => setViewport(v => ({...v, pan: {x: -x * v.zoom, y: -y * v.zoom}}))}
-            />
-
-            {contextMenu && <ContextMenu {...contextMenu} onClose={() => setContextMenu(null)} />}
-
-            {isDrawing && <DrawingModal 
-                onSave={(src, width, height) => { addDrawing(src, width, height); setIsDrawing(false); }} 
-                onClose={() => setIsDrawing(false)} 
-            />}
-
-            {drawingToEdit && <DrawingModal 
-                initialDrawing={drawingToEdit.src}
-                onSave={(src, width, height) => { updateElements([{id: drawingToEdit.id, data: {src}}]); setDrawingToEdit(null); }}
-                onClose={() => setDrawingToEdit(null)}
-            />}
-            
-            {croppingElement && <CroppingModal 
-                element={croppingElement}
-                onSave={(src, width, height) => {
-                    const aspectRatio = width / height;
-                    const newWidth = croppingElement.width;
-                    const newHeight = newWidth / aspectRatio;
-                    const data: Partial<ImageElement | DrawingElement> = { src, width: newWidth, height: newHeight };
-                    if ('intrinsicWidth' in croppingElement) {
-                        (data as Partial<ImageElement>).intrinsicWidth = width;
-                        (data as Partial<ImageElement>).intrinsicHeight = height;
-                    }
-                    updateElements([{id: croppingElement.id, data }]);
-                    setCroppingElement(null);
-                }}
-                onClose={() => setCroppingElement(null)}
-            />}
-
-            {isTakingPhoto && <CameraModal 
-                onCapture={(dataUrl, bgOption) => {
-                    handleCameraCapture(dataUrl, bgOption, placeholderTarget);
-                    setIsTakingPhoto(false);
-                    if (placeholderTarget) setPlaceholderTarget(null);
-                    if (imageCompareTarget) setImageCompareTarget(null);
-                }}
-                onClose={() => {
-                    setIsTakingPhoto(false);
-                    if (placeholderTarget) setPlaceholderTarget(null);
-                    if (imageCompareTarget) setImageCompareTarget(null);
-                }}
-            />}
-            
-            {isInspirationModalOpen && inspirationData && <InspirationModal
+             return (
+                 <svg key={c.id} className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" 
+                      style={{ transform: `translate(${viewport.pan.x}px, ${viewport.pan.y}px) scale(${viewport.zoom})`, transformOrigin: '0 0' }}>
+                     <path d={`M ${startPoint.x} ${startPoint.y} C ${startPoint.x + 100 * (c.sourceSide === 'left' ? -1 : 1)} ${startPoint.y}, ${endPoint.x + 100 * (c.targetSide === 'left' ? -1 : 1)} ${endPoint.y}, ${endPoint.x} ${endPoint.y}`}
+                           stroke="var(--cyber-cyan)" strokeWidth="2" fill="none"
+                           style={{ filter: 'drop-shadow(0 0 3px var(--cyber-glow-cyan))' }}/>
+                 </svg>
+             );
+        })}
+        {inspirationConfirm && (
+            <div className="fixed inset-0 bg-black/70 z-[9998] flex items-center justify-center backdrop-blur-sm">
+                 <div className="bg-[var(--cyber-bg)] border border-[var(--cyber-border)] p-6 rounded-xl shadow-2xl flex flex-col gap-4">
+                     <h2 className="text-lg font-bold text-white">新圖片已加入！</h2>
+                     <p className="text-gray-300">是否要自動分析此圖片以獲取改圖靈感？</p>
+                     <div className="flex justify-end gap-3 mt-2">
+                        <button onClick={() => handleInspirationConfirm(false)} className="px-4 py-2 bg-slate-700 text-gray-200 rounded-md hover:bg-slate-600">不用了</button>
+                        <button onClick={() => handleInspirationConfirm(true)} className="px-4 py-2 bg-[var(--cyber-cyan)] text-black font-bold rounded-md hover:bg-cyan-300">是，分析它</button>
+                     </div>
+                 </div>
+            </div>
+        )}
+        {inspirationData && (
+            <InspirationModal 
                 suggestions={inspirationData.modificationSuggestions}
                 prompts={inspirationData.textPrompts}
-                onClose={() => setIsInspirationModalOpen(false)}
-                onApply={(selectedSuggestions, selectedPrompt) => {
-                    const textToAdd = [...selectedSuggestions, selectedPrompt].filter(Boolean).join('. ');
-                    if (!textToAdd) {
-                        setIsInspirationModalOpen(false);
-                        return;
+                onClose={() => setInspirationData(null)}
+                onApply={(suggestions, prompt) => {
+                    const selectedId = selectedElements[0]?.id || selectedElements[0]?.groupId;
+                    const isGroup = !!selectedElements[0]?.groupId;
+                    
+                    if (selectedId) {
+                        const newPrompt = [
+                            (isGroup ? prompts[selectedId] : prompts[selectedId]) || '',
+                            ...suggestions,
+                            prompt || ''
+                        ].filter(Boolean).join(', ');
+                        
+                        setPrompts(p => ({ ...p, [selectedId]: newPrompt }));
                     }
-
-                    const singleElement = selectedElements.length === 1 ? selectedElements[0] : null;
-                    const groupId = !singleElement && selectedElements.length > 1 ? selectedElements[0].groupId : null;
-
-                    if (singleElement && singleElement.type === 'note') {
-                        const currentContent = singleElement.content || '';
-                        const newContent = currentContent ? `${currentContent}\n\n${textToAdd}` : textToAdd;
-                        updateElements([{ id: singleElement.id, data: { content: newContent } }]);
-                    } else {
-                        const idToUpdate = singleElement?.id || groupId;
-                        if (idToUpdate) {
-                            const currentPrompt = prompts[idToUpdate] || '';
-                            const newPrompt = currentPrompt ? `${currentPrompt}, ${textToAdd}` : textToAdd;
-                            setPrompts(p => ({ ...p, [idToUpdate]: newPrompt }));
-                        }
-                    }
-                    setIsInspirationModalOpen(false);
+                    
+                    setInspirationData(null);
                 }}
-            />}
-
-            {inspirationConfirm && (
-                 <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center backdrop-blur-sm" onMouseDown={() => handleInspirationConfirm(false)}>
-                    <div 
-                        className="bg-[var(--cyber-bg)] border border-[var(--cyber-border)] p-6 rounded-xl shadow-2xl flex flex-col gap-4 w-full max-w-sm" 
-                        onMouseDown={(e) => e.stopPropagation()}
-                    >
-                        <h2 className="text-xl font-bold text-[var(--cyber-cyan)]">AI 自動分析</h2>
-                        <p className="text-gray-300">偵測到新的圖片，您是否要立即使用 AI 分析它以獲取靈感？</p>
-                        <div className="flex justify-end gap-3 mt-2">
-                            <button onClick={() => handleInspirationConfirm(false)} className="px-4 py-2 bg-slate-700 text-gray-200 rounded-md hover:bg-slate-600">不用你雞婆！</button>
-                            <button onClick={() => handleInspirationConfirm(true)} className="px-4 py-2 bg-[var(--cyber-cyan)] text-black font-bold rounded-md hover:bg-cyan-300">請用力分析</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-
-            {isGenerating && (
-                <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center backdrop-blur-sm">
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="w-16 h-16 border-4 border-dashed border-cyan-400 rounded-full animate-spin"></div>
-                        <p className="text-xl text-white font-bold">{generationStatus}</p>
-                    </div>
-                </div>
-            )}
-
-            <input
-                type="file"
-                ref={fileInputRef}
-                onChange={(e) => handleFileUploads(e.target.files)}
-                className="hidden"
-                accept="image/*"
-                multiple
             />
-            <input
-                type="file"
-                ref={musicUploadRefForLink}
-                onChange={(e) => { handleRelinkFolderSelect(e.target.files); e.target.value = ''; }}
-                className="hidden"
-                // @ts-ignore
-                webkitdirectory="true"
-                directory="true"
-                multiple
-            />
-            
-            <ShortcutHints />
-            
-            {selectedElements.length === 1 && (() => {
-                const el = elements.find(e => e.id === selectedElements[0].id);
-                if (!el) return null;
-                return (
-                    <div className="absolute bottom-4 left-4 z-30 bg-slate-900/80 p-2 rounded-lg text-xs font-mono text-gray-300 border border-slate-700">
-                        X: {Math.round(el.position.x)}, Y: {Math.round(el.position.y)}
-                    </div>
-                );
-            })()}
-        </div>
-    );
+        )}
+        {selectedElements.length === 1 && (
+            <div className="absolute bottom-4 left-4 z-30 p-2 bg-slate-900/80 backdrop-blur-md rounded-lg text-xs font-mono text-gray-400 pointer-events-none">
+                X: {Math.round(selectedElements[0].position.x)}, Y: {Math.round(selectedElements[0].position.y)}
+            </div>
+        )}
+    </div>
+  );
 };

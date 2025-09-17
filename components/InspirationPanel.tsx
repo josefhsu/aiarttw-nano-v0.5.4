@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { CanvasElement, NoteElement, Point } from '../types';
 import { ChevronDown, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react';
 import { HOT_APPLICATIONS, PROMPT_MAP, ULTIMATE_EDITING_GUIDE, RANDOM_GRADIENTS } from '../constants';
+// FIX: Correcting import path for constants that were moved from constants1.tsx to constants2.tsx to resolve module export errors.
 import {
     NCL_OPTIONS,
     NIGHT_CITY_WEAPONS,
@@ -11,7 +12,7 @@ import {
     NIGHT_CITY_MISSIONS,
     UNIFIED_DIRECTOR_STYLES,
     NIGHT_CITY_LEGENDS
-} from '../constants1';
+} from '../constants2';
 import { calculateNoteHeight } from '../utils';
 
 type AddNoteFn = (element: Omit<NoteElement, 'id' | 'zIndex'>) => void;
@@ -187,12 +188,15 @@ export const InspirationPanel: React.FC<InspirationPanelProps> = ({
     const [promptChoices, setPromptChoices] = useState<{ title: string; options: string[]; onConfirm: (choice: string) => void } | null>(null);
     const [isHotAppsExpanded, setIsHotAppsExpanded] = useState(false);
     
-    const allCharOptions = { ...NCL_OPTIONS };
+    const allCharOptions = NCL_OPTIONS;
 
     const [charSettings, setCharSettings] = useState(() => {
         const initialState: Record<string, string> = {};
         Object.keys(allCharOptions).forEach(key => {
-            initialState[key] = allCharOptions[key as keyof typeof allCharOptions].options[0];
+            const optionsKey = key as keyof typeof allCharOptions;
+            if (allCharOptions[optionsKey] && allCharOptions[optionsKey].options) {
+               initialState[key] = allCharOptions[optionsKey].options[0];
+            }
         });
         return initialState;
     });
@@ -362,7 +366,9 @@ export const InspirationPanel: React.FC<InspirationPanelProps> = ({
         const companion = getRandomItem(Object.values(NIGHT_CITY_COMPANIONS).flat());
         const missionOptions = NIGHT_CITY_MISSIONS.flatMap(m => m.options);
         const mission = missionOptions.length > 0 ? getRandomItem(missionOptions) : "a secret operation";
-        const scene = getRandomItem(Object.values(NIGHT_CITY_LEGENDS).flat()).name;
+        // FIX: The data structure for NIGHT_CITY_LEGENDS is nested. We need to flatten it twice to get a single array of scene objects.
+        const allScenes = Object.values(NIGHT_CITY_LEGENDS).flatMap(v => Object.values(v) as { name: string; prompt: string }[][]).flat();
+        const scene = getRandomItem(allScenes).name;
         const prompt = `**任務場景:** ${scene}\n**角色:** ${character}\n**任務夥伴:** ${companion}\n**武器/載具:** Armed with a ${weapon}, driving a ${vehicle}.\n**幻夢設定:** The mission is to "${mission}".`;
         return prompt;
     };
@@ -490,7 +496,7 @@ export const InspirationPanel: React.FC<InspirationPanelProps> = ({
                                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                                             {Object.entries(allCharOptions).map(([key, value]) => (
                                                 <div key={key} className="flex flex-col gap-1">
-                                                    <select value={charSettings[key]} onChange={(e) => handleCharSettingChange(key, e.target.value)} className="inspiration-btn w-full !text-xs !py-1.5">
+                                                    <select value={charSettings[key]} onChange={(e) => handleCharSettingChange(key as keyof typeof charSettings, e.target.value)} className="inspiration-btn w-full !text-xs !py-1.5">
                                                         {value.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                                     </select>
                                                 </div>
@@ -534,12 +540,14 @@ export const InspirationPanel: React.FC<InspirationPanelProps> = ({
                                     </div>
                                 </CollapsibleSection>
                             </div>
-                            {Object.entries(NIGHT_CITY_LEGENDS).map(([category, items]) => (
+                            {Object.entries(NIGHT_CITY_LEGENDS).map(([category, subcategories]) => (
                                 <div key={category} className="inspiration-section cyberpunk-section">
                                     <h3 className="cyberpunk-section-header">{category}</h3>
                                     
                                     <ExpandablePromptList
-                                        items={items}
+                                        // FIX: The `items` prop for `ExpandablePromptList` expects a flat array of prompt objects.
+                                        // The `subcategories` variable is an object of arrays, so we flatten it.
+                                        items={(Object.values(subcategories) as { name: string; prompt: string }[][]).flat()}
                                         onItemClick={(prompt, replace) => handleNCLPrompt(prompt, 'scenes', replace)}
                                         initialCount={15}
                                         buttonClassName="inspiration-btn-cyberpunk"
