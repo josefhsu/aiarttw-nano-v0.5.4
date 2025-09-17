@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenAI, Modality, Type } from "@google/genai";
@@ -2493,15 +2491,18 @@ ${userPrompt}
     const handleCreateComparisonFromGroup = (groupId: string) => {
         const groupImages = elements.filter(el => el.groupId === groupId && (el.type === 'image' || el.type === 'drawing')) as (ImageElement | DrawingElement)[];
         if (groupImages.length !== 2) return;
-        
-        const [beforeImg, afterImg] = groupImages;
+    
+        const sortedImages = [...groupImages].sort((a, b) => a.position.x - b.position.x);
+        const [beforeImg, afterImg] = sortedImages;
         const bounds = getElementsBounds(groupImages);
-        
-        const newCompareElement: Omit<ImageCompareElement, 'id' | 'zIndex'> = {
+    
+        const newCompareElement: ImageCompareElement = {
+            id: uuidv4(),
+            zIndex: getNextZIndex(),
             type: 'imageCompare',
-            position: { x: bounds.minX, y: bounds.minY },
-            width: bounds.maxX - bounds.minX,
-            height: bounds.maxY - bounds.minY,
+            position: { x: bounds.maxX + 20, y: bounds.minY },
+            width: afterImg.width,
+            height: afterImg.height,
             rotation: 0,
             srcBefore: beforeImg.src,
             intrinsicWidthBefore: (beforeImg as ImageElement).intrinsicWidth || beforeImg.width,
@@ -2510,9 +2511,63 @@ ${userPrompt}
             intrinsicWidthAfter: (afterImg as ImageElement).intrinsicWidth || afterImg.width,
             intrinsicHeightAfter: (afterImg as ImageElement).intrinsicHeight || afterImg.height,
         };
+    
+        setElements(prev => [ ...prev, newCompareElement ], { addToHistory: true });
+        setSelectedElementIds([newCompareElement.id]);
+    };
 
-        addElement(newCompareElement);
-        deleteElements([beforeImg.id, afterImg.id]);
+    const handleUnpackComparison = (elementId: string) => {
+        const element = elements.find(el => el.id === elementId) as ImageCompareElement;
+        if (!element || element.type !== 'imageCompare') return;
+
+        const { 
+            srcBefore, intrinsicWidthBefore, intrinsicHeightBefore,
+            srcAfter, intrinsicWidthAfter, intrinsicHeightAfter,
+            position, width, rotation
+        } = element;
+
+        if (!srcBefore || !srcAfter) {
+            alert("比較物件中缺少圖片，無法解開。");
+            return;
+        }
+
+        const baseWidth = width / 2.1; // Make them slightly smaller than half to fit with spacing
+
+        const beforeAspectRatio = intrinsicWidthBefore > 0 ? intrinsicWidthBefore / intrinsicHeightBefore : 1;
+        const newImageBefore: ImageElement = {
+            id: uuidv4(),
+            type: 'image',
+            zIndex: getNextZIndex(),
+            position: { x: position.x, y: position.y },
+            width: baseWidth,
+            height: baseWidth / beforeAspectRatio,
+            rotation: rotation,
+            src: srcBefore,
+            intrinsicWidth: intrinsicWidthBefore,
+            intrinsicHeight: intrinsicHeightBefore,
+        };
+
+        const afterAspectRatio = intrinsicWidthAfter > 0 ? intrinsicWidthAfter / intrinsicHeightAfter : 1;
+        const newImageAfter: ImageElement = {
+            id: uuidv4(),
+            type: 'image',
+            zIndex: getNextZIndex() + 1,
+            position: { x: position.x + baseWidth + 10, y: position.y },
+            width: baseWidth,
+            height: baseWidth / afterAspectRatio,
+            rotation: rotation,
+            src: srcAfter,
+            intrinsicWidth: intrinsicWidthAfter,
+            intrinsicHeight: intrinsicHeightAfter,
+        };
+
+        setElements(prev => [
+            ...prev.filter(el => el.id !== elementId),
+            newImageBefore,
+            newImageAfter
+        ], { addToHistory: true });
+
+        setSelectedElementIds([newImageBefore.id, newImageAfter.id]);
     };
 
     const handleContextualGeneration = (directive: string) => {
@@ -2638,6 +2693,7 @@ ${userPrompt}
             onNoteGenerate={handleNoteGenerate}
             onCreateComparison={handleCreateComparisonFromGroup}
             onConvertToComparison={handleConvertToComparison}
+            onUnpackComparison={handleUnpackComparison}
             isGenerating={isGenerating}
             onStartConnection={handleStartConnection}
             onToggleGroupLock={handleToggleGroupLock}

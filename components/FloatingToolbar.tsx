@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trash2, Copy, Crop, Edit, Wand2, Lightbulb, ArrowUpToLine, ArrowDownToLine, Group, Lock, Unlock, Minus, Plus, Sparkles, Download, Expand, Camera, ClipboardPaste, Eraser, ClipboardCopy, GitCompare, AlignHorizontalSpaceAround } from 'lucide-react';
+import { Trash2, Copy, Crop, Edit, Wand2, Lightbulb, ArrowUpToLine, ArrowDownToLine, Group, Lock, Unlock, Minus, Plus, Sparkles, Download, Expand, Camera, ClipboardPaste, Eraser, ClipboardCopy, GitCompare, AlignHorizontalSpaceAround, Unlink } from 'lucide-react';
 import { AdvancedColorPicker } from './ColorPicker';
 import type { CanvasElement, NoteElement, ImageElement, DrawingElement, Viewport, ArrowElement, Point } from '../types';
 import { getElementsBounds } from '../utils';
@@ -46,6 +46,7 @@ interface FloatingToolbarProps {
   onNoteGenerate: (noteId: string) => void;
   onCreateComparison: (groupId: string) => void;
   onConvertToComparison: (elementId: string) => void;
+  onUnpackComparison: (elementId: string) => void;
   isGenerating: boolean;
   onStartConnection: (elementId: string, portSide: 'left' | 'right') => void;
   onToggleGroupLock: (groupId?: string) => void;
@@ -63,7 +64,7 @@ const IconButton: React.FC<IconButtonProps> =
 );
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ 
-    elements, selectedElements, viewport, prompts, onPromptsChange, aspectRatios, onAspectRatiosChange, artStyles, onArtStylesChange, onDelete, onDuplicate, onBringToFront, onSendToBack, onUpdateElements, onCommitHistory, onCrop, onEditDrawing, onDownload, onAIGenerate, onAIZoomOut, onAIGroupGenerate, onRequestInspiration, onRequestGroupInspiration, onOptimizeGroupPrompt, onOptimizeSingleElementPrompt, onNoteInspiration, onNoteOptimization, onNoteGenerate, onCreateComparison, onConvertToComparison, isGenerating, onStartConnection, onToggleGroupLock, lockedGroupIds, onClearConnections, onFillPlaceholderFromCamera, onFillPlaceholderFromPaste
+    elements, selectedElements, viewport, prompts, onPromptsChange, aspectRatios, onAspectRatiosChange, artStyles, onArtStylesChange, onDelete, onDuplicate, onBringToFront, onSendToBack, onUpdateElements, onCommitHistory, onCrop, onEditDrawing, onDownload, onAIGenerate, onAIZoomOut, onAIGroupGenerate, onRequestInspiration, onRequestGroupInspiration, onOptimizeGroupPrompt, onOptimizeSingleElementPrompt, onNoteInspiration, onNoteOptimization, onNoteGenerate, onCreateComparison, onConvertToComparison, onUnpackComparison, isGenerating, onStartConnection, onToggleGroupLock, lockedGroupIds, onClearConnections, onFillPlaceholderFromCamera, onFillPlaceholderFromPaste
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [manualTextareaHeight, setManualTextareaHeight] = useState<number | null>(null);
@@ -183,6 +184,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   const isDrawing = element?.type === 'drawing';
   const isArrow = element?.type === 'arrow';
   const isPlaceholder = element?.type === 'placeholder';
+  const isImageCompare = element?.type === 'imageCompare';
   const canEditAI = isImage || isDrawing;
   
   const getBoundsStyle = (): React.CSSProperties => {
@@ -341,6 +343,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                     {isGroup && isLocked && <IconButton title="解鎖群組" onClick={() => onToggleGroupLock(groupId)}><Unlock size={18} /></IconButton>}
                     {(isImage || isDrawing) && <IconButton title="下載" onClick={() => element && onDownload(element.id)}><Download size={18} /></IconButton>}
                     {(isImage || isDrawing) && <IconButton title="建立比較" onClick={() => element && onConvertToComparison(element.id)}><GitCompare size={18} /></IconButton>}
+                    {isImageCompare && <IconButton title="解開比較" onClick={() => element && onUnpackComparison(element.id)}><Unlink size={18} /></IconButton>}
                     {(isImage || isDrawing) && <IconButton title="AI 擴展 (Zoom Out)" onClick={() => element && onAIZoomOut(element.id)}><Expand size={18} /></IconButton>}
                     {isImage && <IconButton title="裁切 (Alt+C)" onClick={onCrop}><Crop size={18} /></IconButton>}
                     {isDrawing && <IconButton title="編輯繪圖 (Alt+E)" onClick={onEditDrawing}><Edit size={18} /></IconButton>}
