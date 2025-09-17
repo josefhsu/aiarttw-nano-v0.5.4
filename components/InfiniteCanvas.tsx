@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useCallback, useEffect, forwardRef } from 'react';
 import type { CanvasElement, Point, Viewport, ArrowElement, ImageCompareElement } from '../types';
 import { TransformableElement, ScreenToCanvasFn } from './TransformableElement';
@@ -26,6 +27,9 @@ interface InfiniteCanvasProps {
   isAnimationActive: boolean;
   onTriggerCameraForCompare: (elementId: string, side: 'before' | 'after') => void;
   onTriggerPasteForCompare: (elementId: string, side: 'before' | 'after') => void;
+  ghostElements: CanvasElement[] | null;
+  onStartAltDrag: (elements: CanvasElement[]) => void;
+  onEndAltDrag: () => void;
 }
 
 const intersects = (rect1: {minX: number, minY: number, maxX: number, maxY: number}, rect2: {minX: number, minY: number, maxX: number, maxY: number}) => {
@@ -36,7 +40,7 @@ export const InfiniteCanvas = forwardRef<HTMLDivElement, InfiniteCanvasProps>(({
   elements, viewport, onViewportChange, onUpdateElements, onCommitHistory, onAddElement, onAltDragDuplicate, onReplacePlaceholder,
   selectedElementIds, onSelectElements, onDoubleClickElement, activeTool, onToolChange, isDraggingOver,
   isConnecting, drawingArrow, onDrawingArrowChange, lockedGroupIds, singlySelectedIdInGroup, isAnimationActive,
-  onTriggerCameraForCompare, onTriggerPasteForCompare
+  onTriggerCameraForCompare, onTriggerPasteForCompare, ghostElements, onStartAltDrag, onEndAltDrag
 }, ref) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -621,6 +625,23 @@ export const InfiniteCanvas = forwardRef<HTMLDivElement, InfiniteCanvasProps>(({
         }}
       >
         <div className="relative w-full h-full">
+            {ghostElements?.map(ghost => (
+                <div
+                    key={`ghost-${ghost.id}`}
+                    className="absolute pointer-events-none"
+                    style={{
+                        left: ghost.position.x,
+                        top: ghost.position.y,
+                        width: ghost.width,
+                        height: ghost.height,
+                        transform: `rotate(${ghost.rotation}deg)`,
+                        zIndex: ghost.zIndex,
+                        transformOrigin: ghost.type === 'arrow' ? 'left center' : 'center center',
+                    }}
+                >
+                    <div className="w-full h-full border-2 border-dashed border-[var(--cyber-cyan)] opacity-50" />
+                </div>
+            ))}
             {elements.map((element) => (
               <TransformableElement
                 key={element.id}
@@ -637,8 +658,11 @@ export const InfiniteCanvas = forwardRef<HTMLDivElement, InfiniteCanvasProps>(({
                 onDoubleClick={() => onDoubleClickElement(element.id)}
                 lockedGroupIds={lockedGroupIds}
                 screenToCanvas={screenToCanvas}
+                selectedElementIds={selectedElementIds}
                 onTriggerCameraForCompare={onTriggerCameraForCompare}
                 onTriggerPasteForCompare={onTriggerPasteForCompare}
+                onStartAltDrag={onStartAltDrag}
+                onEndAltDrag={onEndAltDrag}
               />
             ))}
         </div>

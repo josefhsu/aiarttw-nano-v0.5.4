@@ -1,3 +1,5 @@
+
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenAI, Modality, Type } from "@google/genai";
@@ -86,6 +88,7 @@ export const App: React.FC = () => {
   const [lockedGroupIds, setLockedGroupIds] = useState<Set<string>>(new Set());
   const [singlySelectedIdInGroup, setSinglySelectedIdInGroup] = useState<string | null>(null);
   const [lastInteractedLayerId, setLastInteractedLayerId] = useState<string | null>(null);
+  const [ghostElements, setGhostElements] = useState<CanvasElement[] | null>(null);
   
   const [prompts, setPrompts] = useState<Record<string, string>>({});
   const [aspectRatios, setAspectRatios] = useState<Record<string, number | null>>({});
@@ -108,7 +111,7 @@ export const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('Generating...');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [newConnection, setNewConnection] = useState<{ sourceId: string; endPoint: Point } | null>(null);
+  const [newConnection, setNewConnection] = useState<{ sourceId: string; startPoint: Point, endPoint: Point } | null>(null);
   const [drawingArrow, setDrawingArrow] = useState<{ start: Point; end: Point } | null>(null);
   const [isInspirationModalOpen, setIsInspirationModalOpen] = useState(false);
   const [inspirationData, setInspirationData] = useState<{ modificationSuggestions: string[], textPrompts: string[] } | null>(null);
@@ -1764,23 +1767,21 @@ const handleFillPlaceholderFromPaste = async (placeholderId: string) => {
     }
 };
 
-  const handleStartConnection = (sourceId: string, portType: 'input' | 'output') => {
-      if (portType === 'output') {
-          const sourceElement = elements.find(el => el.id === sourceId);
-          if (!sourceElement) return;
+  const handleStartConnection = (sourceId: string, portSide: 'left' | 'right') => {
+      const sourceElement = elements.find(el => el.id === sourceId);
+      if (!sourceElement) return;
 
-          const startCanvasPoint = {
-              x: sourceElement.position.x + sourceElement.width,
-              y: sourceElement.position.y + sourceElement.height / 2,
-          };
-          
-          const startScreenPoint = {
-              x: startCanvasPoint.x * viewport.zoom + viewport.pan.x,
-              y: startCanvasPoint.y * viewport.zoom + viewport.pan.y,
-          }
-          
-          setNewConnection({ sourceId: sourceId, endPoint: startScreenPoint });
+      const startCanvasPoint = {
+          x: portSide === 'left' ? sourceElement.position.x : sourceElement.position.x + sourceElement.width,
+          y: sourceElement.position.y + sourceElement.height / 2,
+      };
+      
+      const startScreenPoint = {
+          x: startCanvasPoint.x * viewport.zoom + viewport.pan.x,
+          y: startCanvasPoint.y * viewport.zoom + viewport.pan.y,
       }
+      
+      setNewConnection({ sourceId: sourceId, startPoint: startScreenPoint, endPoint: startScreenPoint });
   };
 
   const handleClearConnections = (elementId: string) => {
@@ -2244,14 +2245,7 @@ const handleFillPlaceholderFromPaste = async (placeholderId: string) => {
     setViewport(v => ({ ...v, pan: { x: newPanX, y: newPanY } }));
   }
 
-  const getPortPosition = (element: CanvasElement, portType: 'input' | 'output'): Point => {
-      const x = portType === 'input' ? element.position.x : element.position.x + element.width;
-      const y = element.position.y + element.height / 2;
-      return {
-          x: x * viewport.zoom + viewport.pan.x,
-          y: y * viewport.zoom + viewport.pan.y,
-      };
-  };
+  const distSq = (p1: Point, p2: Point) => (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2;
   
     const handleToggleGroupLock = (groupId?: string) => {
         if (groupId) {
@@ -2538,6 +2532,36 @@ USER PROMPT: ${userPrompt}
         });
     };
 
+    const handleConvertToComparison = (elementId: string) => {
+        setElements(prev => {
+            return prev.map(el => {
+                if (el.id === elementId && (el.type === 'image' || el.type === 'drawing')) {
+                    const sourceElement = el as ImageElement | DrawingElement;
+                    const newCompareElement: ImageCompareElement = {
+                        id: sourceElement.id,
+                        type: 'imageCompare',
+                        position: sourceElement.position,
+                        width: sourceElement.width,
+                        height: sourceElement.height,
+                        rotation: sourceElement.rotation,
+                        zIndex: sourceElement.zIndex,
+                        groupId: sourceElement.groupId,
+                        srcBefore: sourceElement.src,
+                        intrinsicWidthBefore: (sourceElement as ImageElement).intrinsicWidth || sourceElement.width,
+                        intrinsicHeightBefore: (sourceElement as ImageElement).intrinsicHeight || sourceElement.height,
+                        srcAfter: '',
+                        intrinsicWidthAfter: 0,
+                        intrinsicHeightAfter: 0,
+                    };
+                    return newCompareElement;
+                }
+                return el;
+            });
+// FIX: The second argument to setElements must be a SetStateOptions object, not a boolean.
+// Changed `true` to `{ addToHistory: true }` to correctly add this state change to the history.
+        }, { addToHistory: true });
+    };
+
     const handleContextualGeneration = async (directive: string) => {
         const currentSelectedElements = elements.filter(el => selectedElementIds.includes(el.id));
         if (currentSelectedElements.length === 0) return;
@@ -2758,6 +2782,9 @@ ${directive}
                 isAnimationActive={isAnimationActive}
                 onTriggerCameraForCompare={handleTriggerCameraForCompare}
                 onTriggerPasteForCompare={handleTriggerPasteForCompare}
+                ghostElements={ghostElements}
+                onStartAltDrag={setGhostElements}
+                onEndAltDrag={() => setGhostElements(null)}
             />
             <svg className="absolute inset-0 pointer-events-none" style={{ width: canvasSize.width, height: canvasSize.height }}>
                 <defs>
@@ -2769,16 +2796,26 @@ ${directive}
                     const source = elements.find(el => el.id === conn.sourceId);
                     const target = elements.find(el => el.id === conn.targetId);
                     if (!source || !target) return null;
-                    const sourcePort = getPortPosition(source, 'output');
-                    const targetPort = getPortPosition(target, 'input');
-                    return <line key={conn.id} x1={sourcePort.x} y1={sourcePort.y} x2={targetPort.x} y2={targetPort.y} stroke="#f43f5e" strokeWidth="6" markerEnd="url(#arrow-end)" />;
+
+                    const sourceLeft = { x: (source.position.x) * viewport.zoom + viewport.pan.x, y: (source.position.y + source.height / 2) * viewport.zoom + viewport.pan.y };
+                    const sourceRight = { x: (source.position.x + source.width) * viewport.zoom + viewport.pan.x, y: (source.position.y + source.height / 2) * viewport.zoom + viewport.pan.y };
+                    const targetLeft = { x: (target.position.x) * viewport.zoom + viewport.pan.x, y: (target.position.y + target.height / 2) * viewport.zoom + viewport.pan.y };
+                    const targetRight = { x: (target.position.x + target.width) * viewport.zoom + viewport.pan.x, y: (target.position.y + target.height / 2) * viewport.zoom + viewport.pan.y };
+
+                    const possibleConnections = [
+                        { start: sourceLeft, end: targetLeft, dist: distSq(sourceLeft, targetLeft) },
+                        { start: sourceLeft, end: targetRight, dist: distSq(sourceLeft, targetRight) },
+                        { start: sourceRight, end: targetLeft, dist: distSq(sourceRight, targetLeft) },
+                        { start: sourceRight, end: targetRight, dist: distSq(sourceRight, targetRight) },
+                    ];
+
+                    const bestConnection = possibleConnections.reduce((min, current) => current.dist < min.dist ? current : min);
+                    
+                    return <line key={conn.id} x1={bestConnection.start.x} y1={bestConnection.start.y} x2={bestConnection.end.x} y2={bestConnection.end.y} stroke="#f43f5e" strokeWidth="6" markerEnd="url(#arrow-end)" />;
                 })}
-                {newConnection && (() => {
-                    const source = elements.find(el => el.id === newConnection.sourceId);
-                    if (!source) return null;
-                    const sourcePort = getPortPosition(source, 'output');
-                    return <line x1={sourcePort.x} y1={sourcePort.y} x2={newConnection.endPoint.x} y2={newConnection.endPoint.y} stroke="#f43f5e" strokeWidth="6" strokeDasharray="5,5" />;
-                })()}
+                {newConnection && (
+                    <line x1={newConnection.startPoint.x} y1={newConnection.startPoint.y} x2={newConnection.endPoint.x} y2={newConnection.endPoint.y} stroke="#f43f5e" strokeWidth="6" strokeDasharray="5,5" />
+                )}
                 {drawingArrow && (() => {
                     const start = {
                         x: drawingArrow.start.x * viewport.zoom + viewport.pan.x,
@@ -2818,8 +2855,6 @@ ${directive}
                 elements={elements}
                 selectedElements={selectedElements}
                 viewport={viewport}
-                canvasSize={canvasSize}
-                screenToCanvas={screenToCanvasCoords}
                 prompts={prompts}
                 onPromptsChange={setPrompts}
                 aspectRatios={aspectRatios}
@@ -2852,6 +2887,7 @@ ${directive}
                 onNoteOptimization={handleNoteOptimization}
                 onNoteGenerate={handleNoteGenerate}
                 onCreateComparison={handleCreateComparison}
+                onConvertToComparison={handleConvertToComparison}
                 isGenerating={isGenerating}
                 onStartConnection={handleStartConnection}
                 onToggleGroupLock={handleToggleGroupLock}
@@ -3004,6 +3040,16 @@ ${directive}
             />
             
             <ShortcutHints />
+            
+            {selectedElements.length === 1 && (() => {
+                const el = elements.find(e => e.id === selectedElements[0].id);
+                if (!el) return null;
+                return (
+                    <div className="absolute bottom-4 left-4 z-30 bg-slate-900/80 p-2 rounded-lg text-xs font-mono text-gray-300 border border-slate-700">
+                        X: {Math.round(el.position.x)}, Y: {Math.round(el.position.y)}
+                    </div>
+                );
+            })()}
         </div>
     );
 };

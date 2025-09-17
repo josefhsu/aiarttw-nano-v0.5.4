@@ -108,11 +108,12 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
   const isReady = srcBefore && srcAfter;
 
   if (!isReady) {
+    const hasOneImage = srcBefore || srcAfter;
     return (
         <div className="w-full h-full relative select-none flex flex-col bg-gray-900/50 rounded-lg overflow-hidden border border-gray-700 p-4 gap-4" onMouseDown={handleMouseDown}>
             <p className="text-center text-lg text-gray-300 absolute top-2 left-1/2 -translate-x-1/2">左右各放一張圖來比較</p>
-            <div className="flex-1 flex gap-4 h-full">
-                <div className="w-1/2 h-full flex items-center justify-center">
+            <div className={`flex-1 flex ${hasOneImage ? 'flex-col' : ''} gap-4 h-full`}>
+                <div className={`${hasOneImage ? 'w-full h-1/2' : 'w-1/2 h-full'} flex items-center justify-center`}>
                     {srcBefore ? 
                         <img src={srcBefore} className="max-w-full max-h-full object-contain rounded-md" alt="Before" /> : 
                         <UploadArea 
@@ -123,7 +124,7 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
                         />
                     }
                 </div>
-                <div className="w-1/2 h-full flex items-center justify-center">
+                <div className={`${hasOneImage ? 'w-full h-1/2' : 'w-1/2 h-full'} flex items-center justify-center`}>
                     {srcAfter ? 
                         <img src={srcAfter} className="max-w-full max-h-full object-contain rounded-md" alt="After" /> : 
                         <UploadArea 
@@ -163,14 +164,21 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
         >
-          <img
-            src={srcAfter}
-            alt="After"
-            className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
-            draggable={false}
-          />
+          {/* After image, clipped on the left side */}
           <div
-            className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none"
+            className="absolute inset-0"
+            style={{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }}
+          >
+            <img
+              src={srcAfter}
+              alt="After"
+              className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
+              draggable={false}
+            />
+          </div>
+          {/* Before image, clipped on the right side */}
+          <div
+            className="absolute inset-0"
             style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
           >
             <img
@@ -180,6 +188,7 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
               draggable={false}
             />
           </div>
+          {/* Slider handle */}
           <div
             className="absolute top-0 bottom-0 w-1 bg-orange-500 pointer-events-none cursor-ew-resize"
             style={{ left: `${sliderPosition}%`, transform: 'translateX(-50%)' }}

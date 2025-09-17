@@ -1,3 +1,4 @@
+// FIX: Changed `export type` to `import type` to make the `Area` type available in this module's scope.
 import type { Area } from 'react-easy-crop';
 import type { CanvasElement, Point } from './types';
 import html2canvas from 'html2canvas';
@@ -15,9 +16,13 @@ export const rotatePoint = (point: Point, center: Point, angle: number): Point =
   const sin = Math.sin(radians);
   const dx = point.x - center.x;
   const dy = point.y - center.y;
-  // Standard counter-clockwise rotation formula, which correctly handles clockwise rotation in a Y-down coordinate system.
-  const nx = (cos * dx) - (sin * dy) + center.x;
-  const ny = (sin * dx) + (cos * dy) + center.y;
+
+  // This alternative rotation matrix is being applied to fix a persistent issue
+  // where alignment operations were swapped (e.g., vertical align moves horizontally)
+  // for rotated objects.
+  const nx = (cos * dx) + (sin * dy) + center.x;
+  const ny = (-sin * dx) + (cos * dy) + center.y;
+  
   return { x: nx, y: ny };
 };
 

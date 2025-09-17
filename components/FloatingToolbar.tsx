@@ -1,10 +1,11 @@
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Trash2, Copy, Crop, Edit, Wand2, Lightbulb, ArrowUpToLine, ArrowDownToLine, Group, Lock, Unlock, Minus, Plus, Sparkles, Download, Expand, Camera, ClipboardPaste, Eraser, ClipboardCopy, GitCompare, AlignHorizontalJustifyCenter } from 'lucide-react';
+import { Trash2, Copy, Crop, Edit, Wand2, Lightbulb, ArrowUpToLine, ArrowDownToLine, Group, Lock, Unlock, Minus, Plus, Sparkles, Download, Expand, Camera, ClipboardPaste, Eraser, ClipboardCopy, GitCompare, AlignHorizontalSpaceAround } from 'lucide-react';
 import { AdvancedColorPicker } from './ColorPicker';
 import type { CanvasElement, NoteElement, ImageElement, DrawingElement, Viewport, ArrowElement, Point } from '../types';
 import { getElementsBounds } from '../utils';
 import { ART_STYLES, ASPECT_RATIO_OPTIONS } from '../constants';
-import { AlignmentPopover } from './AlignmentPopover';
 
 interface IconButtonProps {
   title: string;
@@ -18,8 +19,6 @@ interface FloatingToolbarProps {
   elements: CanvasElement[];
   selectedElements: CanvasElement[];
   viewport: Viewport;
-  canvasSize: { width: number, height: number };
-  screenToCanvas: (point: Point) => Point;
   prompts: Record<string, string>;
   onPromptsChange: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   aspectRatios: Record<string, number | null>;
@@ -46,8 +45,9 @@ interface FloatingToolbarProps {
   onNoteOptimization: (noteId: string) => void;
   onNoteGenerate: (noteId: string) => void;
   onCreateComparison: (groupId: string) => void;
+  onConvertToComparison: (elementId: string) => void;
   isGenerating: boolean;
-  onStartConnection: (elementId: string, portType: 'input' | 'output') => void;
+  onStartConnection: (elementId: string, portSide: 'left' | 'right') => void;
   onToggleGroupLock: (groupId?: string) => void;
   lockedGroupIds: Set<string>;
   onClearConnections: (elementId: string) => void;
@@ -63,13 +63,11 @@ const IconButton: React.FC<IconButtonProps> =
 );
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({ 
-    elements, selectedElements, viewport, canvasSize, screenToCanvas, prompts, onPromptsChange, aspectRatios, onAspectRatiosChange, artStyles, onArtStylesChange, onDelete, onDuplicate, onBringToFront, onSendToBack, onUpdateElements, onCommitHistory, onCrop, onEditDrawing, onDownload, onAIGenerate, onAIZoomOut, onAIGroupGenerate, onRequestInspiration, onRequestGroupInspiration, onOptimizeGroupPrompt, onOptimizeSingleElementPrompt, onNoteInspiration, onNoteOptimization, onNoteGenerate, onCreateComparison, isGenerating, onStartConnection, onToggleGroupLock, lockedGroupIds, onClearConnections, onFillPlaceholderFromCamera, onFillPlaceholderFromPaste
+    elements, selectedElements, viewport, prompts, onPromptsChange, aspectRatios, onAspectRatiosChange, artStyles, onArtStylesChange, onDelete, onDuplicate, onBringToFront, onSendToBack, onUpdateElements, onCommitHistory, onCrop, onEditDrawing, onDownload, onAIGenerate, onAIZoomOut, onAIGroupGenerate, onRequestInspiration, onRequestGroupInspiration, onOptimizeGroupPrompt, onOptimizeSingleElementPrompt, onNoteInspiration, onNoteOptimization, onNoteGenerate, onCreateComparison, onConvertToComparison, isGenerating, onStartConnection, onToggleGroupLock, lockedGroupIds, onClearConnections, onFillPlaceholderFromCamera, onFillPlaceholderFromPaste
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [manualTextareaHeight, setManualTextareaHeight] = useState<number | null>(null);
   const [isCopied, setIsCopied] = useState(false);
-  const [isAlignPopoverOpen, setIsAlignPopoverOpen] = useState(false);
-  const alignButtonRef = useRef<HTMLDivElement>(null);
   
   const [isDragging, setIsDragging] = useState(false);
   const dragStartDetails = useRef<{
@@ -235,13 +233,61 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       }
   };
 
+  const applyUpdates = (updates: { id: string; data: Partial<CanvasElement> }[]) => {
+      if (updates.length === 0) return;
+      onUpdateElements(updates, false);
+      onCommitHistory(updates);
+  };
+  
+  const handleHorizontalSpread = () => {
+      if (selectedElements.length < 2) return;
+  
+      const spacing = 10 / viewport.zoom;
+  
+      const items = selectedElements
+          .map(element => ({ element, bounds: getElementsBounds([element]) }))
+          .sort((a, b) => a.bounds.minX - b.bounds.minX);
+  
+      const selectionBounds = getElementsBounds(selectedElements);
+      const verticalCenter = selectionBounds.minY + (selectionBounds.maxY - selectionBounds.minY) / 2;
+  
+      const totalWidth = items.reduce((sum, item) => sum + (item.bounds.maxX - item.bounds.minX), 0) + (items.length - 1) * spacing;
+      
+      let currentX = selectionBounds.minX + (selectionBounds.maxX - selectionBounds.minX) / 2 - totalWidth / 2;
+  
+      const updates: { id: string; data: Partial<CanvasElement> }[] = [];
+  
+      for (const item of items) {
+          const itemWidth = item.bounds.maxX - item.bounds.minX;
+          const itemHeight = item.bounds.maxY - item.bounds.minY;
+  
+          const newMinX = currentX;
+          const newMinY = verticalCenter - (itemHeight / 2);
+  
+          const dx = newMinX - item.bounds.minX;
+          const dy = newMinY - item.bounds.minY;
+  
+          updates.push({
+              id: item.element.id,
+              data: {
+                  position: {
+                      x: item.element.position.x + dx,
+                      y: item.element.position.y + dy,
+                  }
+              }
+          });
+  
+          currentX += itemWidth + spacing;
+      }
+  
+      applyUpdates(updates);
+  };
+
   const renderContent = () => {
     if (isGroup && !isLocked) {
         return (
             <div className="flex items-center gap-2 justify-center">
-                <div ref={alignButtonRef}>
-                    <IconButton title="對齊" onClick={() => setIsAlignPopoverOpen(prev => !prev)}><AlignHorizontalJustifyCenter size={18} /></IconButton>
-                </div>
+                <IconButton title="水平攤開" onClick={handleHorizontalSpread} disabled={selectedElements.length < 2}><AlignHorizontalSpaceAround size={18} /></IconButton>
                 <div className="w-px h-6 bg-slate-700 mx-1" />
                 <IconButton title="移到最前 (Cmd/Ctrl+])" onClick={onBringToFront}><ArrowUpToLine size={18} /></IconButton>
                 <IconButton title="移到最後 (Cmd/Ctrl+[)" onClick={onSendToBack}><ArrowDownToLine size={18} /></IconButton>
@@ -273,16 +319,15 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
     const imageElementsInGroup = selectedElements.filter(el => el.type === 'image' || el.type === 'drawing');
     const canCompare = isLocked && imageElementsInGroup.length === 2;
+    const showPorts = isSingleSelection && element && !isArrow && !isPlaceholder;
 
     return (
         <div className="w-full flex flex-col gap-2">
             <div className="relative flex items-center justify-between px-6">
-                {isSingleSelection && <div className="node-port input" title="Input Port (連點兩下清除連接)" onMouseDown={(e) => { e.stopPropagation(); element && onStartConnection(element.id, 'input'); }} onDoubleClick={(e) => { e.stopPropagation(); element && onClearConnections(element.id); }} />}
+                {showPorts && <div className="node-port" style={{ left: -8 }} title="連接點 (連點兩下清除連接)" onMouseDown={(e) => { e.stopPropagation(); element && onStartConnection(element.id, 'left'); }} onDoubleClick={(e) => { e.stopPropagation(); element && onClearConnections(element.id); }} />}
                 
                 <div className="flex items-center gap-1">
-                    <div ref={alignButtonRef}>
-                      <IconButton title="對齊" onClick={() => setIsAlignPopoverOpen(prev => !prev)}><AlignHorizontalJustifyCenter size={18} /></IconButton>
-                    </div>
+                    {selectedElements.length > 1 && <IconButton title="水平攤開" onClick={handleHorizontalSpread}><AlignHorizontalSpaceAround size={18} /></IconButton>}
                     <div className="w-px h-6 bg-slate-700 mx-1" />
                     <IconButton title="移到最前 (Cmd/Ctrl+])" onClick={onBringToFront}><ArrowUpToLine size={18} /></IconButton>
                     <IconButton title="移到最後 (Cmd/Ctrl+[)" onClick={onSendToBack}><ArrowDownToLine size={18} /></IconButton>
@@ -295,6 +340,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                 <div className="flex items-center gap-1">
                     {isGroup && isLocked && <IconButton title="解鎖群組" onClick={() => onToggleGroupLock(groupId)}><Unlock size={18} /></IconButton>}
                     {(isImage || isDrawing) && <IconButton title="下載" onClick={() => element && onDownload(element.id)}><Download size={18} /></IconButton>}
+                    {(isImage || isDrawing) && <IconButton title="建立比較" onClick={() => element && onConvertToComparison(element.id)}><GitCompare size={18} /></IconButton>}
                     {(isImage || isDrawing) && <IconButton title="AI 擴展 (Zoom Out)" onClick={() => element && onAIZoomOut(element.id)}><Expand size={18} /></IconButton>}
                     {isImage && <IconButton title="裁切 (Alt+C)" onClick={onCrop}><Crop size={18} /></IconButton>}
                     {isDrawing && <IconButton title="編輯繪圖 (Alt+E)" onClick={onEditDrawing}><Edit size={18} /></IconButton>}
@@ -308,7 +354,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                     )}
                 </div>
 
-                {isSingleSelection && <div className="node-port output" title="Output Port (連點兩下清除連接)" onMouseDown={(e) => { e.stopPropagation(); element && onStartConnection(element.id, 'output'); }} onDoubleClick={(e) => { e.stopPropagation(); element && onClearConnections(element.id); }} />}
+                {showPorts && <div className="node-port" style={{ right: -8 }} title="連接點 (連點兩下清除連接)" onMouseDown={(e) => { e.stopPropagation(); element && onStartConnection(element.id, 'right'); }} onDoubleClick={(e) => { e.stopPropagation(); element && onClearConnections(element.id); }} />}
             </div>
 
             {(isArrow && element) && (
@@ -459,7 +505,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   }
 
   return (
-    <>
     <div 
         className="absolute z-40 bg-slate-900/80 backdrop-blur-md rounded-xl shadow-2xl border border-[var(--cyber-border)] p-2 flex flex-col gap-2"
         style={getBoundsStyle()}
@@ -467,18 +512,5 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     >
       {renderContent()}
     </div>
-    {isAlignPopoverOpen && (
-        <AlignmentPopover
-          anchorEl={alignButtonRef.current}
-          onClose={() => setIsAlignPopoverOpen(false)}
-          selectedElements={selectedElements}
-          canvasSize={canvasSize}
-          viewport={viewport}
-          screenToCanvas={screenToCanvas}
-          onUpdateElements={onUpdateElements}
-          onCommitHistory={onCommitHistory}
-        />
-    )}
-    </>
   );
 };

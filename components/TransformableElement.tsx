@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import type { CanvasElement, Point, Viewport, NoteElement, ImageElement, DrawingElement, ArrowElement, PlaceholderElement, ImageCompareElement } from '../types';
 import { getElementCenter, rotatePoint, gcd } from '../utils';
@@ -20,8 +21,11 @@ interface TransformableElementProps {
     onDoubleClick: () => void;
     lockedGroupIds: Set<string>;
     screenToCanvas: ScreenToCanvasFn;
+    selectedElementIds: string[];
     onTriggerCameraForCompare: (elementId: string, side: 'before' | 'after') => void;
     onTriggerPasteForCompare: (elementId: string, side: 'before' | 'after') => void;
+    onStartAltDrag: (elements: CanvasElement[]) => void;
+    onEndAltDrag: () => void;
 }
 
 type TransformMode = 'translate' | 'resize' | 'rotate' | 'resize-arrow-start' | 'resize-arrow-end' | null;
@@ -29,7 +33,7 @@ type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br';
 
 export const TransformableElement: React.FC<TransformableElementProps> = ({
     element, elements, viewport, isSelected, isDeepSelected, onSelect, onUpdateElements, onCommitHistory, onAltDragDuplicate, onReplacePlaceholder, onDoubleClick, lockedGroupIds, screenToCanvas,
-    onTriggerCameraForCompare, onTriggerPasteForCompare
+    selectedElementIds, onTriggerCameraForCompare, onTriggerPasteForCompare, onStartAltDrag, onEndAltDrag
 }) => {
     const [mode, setMode] = useState<TransformMode>(null);
     const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
@@ -54,15 +58,11 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
         
         let elementsToDrag: CanvasElement[];
         
-        const selectedGroupElements = (element.groupId && lockedGroupIds.has(element.groupId))
-            ? elements.filter(el => el.groupId === element.groupId)
-            : [];
-        
         if (e.altKey && isSelected) {
-           const selectedIds = elements.filter(el => isSelected).map(el => el.id);
-           elementsToDrag = elements.filter(el => selectedIds.includes(el.id));
+           elementsToDrag = elements.filter(el => selectedElementIds.includes(el.id));
+           onStartAltDrag(elementsToDrag);
         } else if (isLocked && isSelected && !isDeepSelected) {
-            elementsToDrag = selectedGroupElements;
+            elementsToDrag = elements.filter(el => el.groupId === element.groupId);
         } else {
             elementsToDrag = [element];
         }
@@ -185,11 +185,15 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
             const newWidth = Math.sqrt(dx * dx + dy * dy);
             const newRotation = Math.atan2(dy, dx) * (180 / Math.PI);
             
-            onUpdateElements([{ id: element.id, data: { position: start, width: newWidth, rotation: newRotation } }]);
+            onUpdateElements([{ id: element.id, data: { position: start, width: newWidth, rotation: newRotation } }])
         }
     }, [mode, activeHandle, viewport.zoom, element.id, onUpdateElements, screenToCanvas]);
 
     const handleMouseUp = useCallback(() => {
+        if (startDragDetails.current?.isAltDrag) {
+            onEndAltDrag();
+        }
+
         if (!mode || !startDragDetails.current) return;
 
         const { isAltDrag, startElements } = startDragDetails.current;
@@ -221,7 +225,7 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
         setMode(null);
         setActiveHandle(null);
         startDragDetails.current = null;
-    }, [mode, elements, onCommitHistory, onAltDragDuplicate]);
+    }, [mode, elements, onCommitHistory, onAltDragDuplicate, onEndAltDrag]);
 
     useEffect(() => {
         if (mode) {
