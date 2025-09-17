@@ -1,12 +1,77 @@
 import React, { useState, useRef, useCallback } from 'react';
 import type { ImageCompareElement } from '../types';
-import { ChevronsLeftRight } from 'lucide-react';
+import { ChevronsLeftRight, ImagePlus, Camera, ClipboardPaste } from 'lucide-react';
+import { fileToBase64 } from '../utils';
 
 interface ImageCompareProps {
   element: ImageCompareElement;
+  onUpdateElements: (updates: { id: string; data: Partial<ImageCompareElement> }[]) => void;
+  onTriggerCameraForCompare: (elementId: string, side: 'before' | 'after') => void;
+  onTriggerPasteForCompare: (elementId: string, side: 'before' | 'after') => void;
 }
 
-export const ImageCompare: React.FC<ImageCompareProps> = ({ element }) => {
+const UploadArea: React.FC<{
+    title: string;
+    onImageSet: (file: File) => void;
+    onCameraClick: () => void;
+    onPasteClick: () => void;
+}> = ({ title, onImageSet, onCameraClick, onPasteClick }) => {
+    const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) onImageSet(file);
+    };
+    
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file && file.type.startsWith('image/')) {
+            onImageSet(file);
+        }
+    };
+
+    return (
+        <div 
+            className={`w-full h-full border-2 border-dashed rounded-lg flex flex-col items-center justify-center text-gray-500 transition-colors ${isDraggingOver ? 'border-cyan-400 bg-cyan-900/30' : 'border-gray-600'}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
+            <div 
+                className="flex-grow flex flex-col items-center justify-center cursor-pointer w-full"
+                onClick={() => fileInputRef.current?.click()}
+            >
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+                <ImagePlus size={24} className="mx-auto mb-2" />
+                <p className="text-sm font-semibold">{title}</p>
+                <p className="text-xs mt-1">拖放或點擊上傳</p>
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-2 p-2 border-t border-dashed border-gray-600 w-full justify-center">
+                <button title="攝像頭" onClick={(e) => { e.stopPropagation(); onCameraClick(); }} className="p-2 hover:bg-slate-700 rounded-lg"><Camera size={18} /></button>
+                <button title="貼上" onClick={(e) => { e.stopPropagation(); onPasteClick(); }} className="p-2 hover:bg-slate-700 rounded-lg"><ClipboardPaste size={18} /></button>
+            </div>
+        </div>
+    );
+};
+
+
+export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateElements, onTriggerCameraForCompare, onTriggerPasteForCompare }) => {
   const [mode, setMode] = useState<'slider' | 'result'>('slider');
   const [sliderPosition, setSliderPosition] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -20,14 +85,59 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element }) => {
   }, [mode]);
   
   const handleMouseDown = (e: React.MouseEvent) => {
-      // In slider mode, stop propagation to prevent TransformableElement from moving the component.
-      // This allows the slider to be controlled by mouse movement without dragging the whole element.
-      if (mode === 'slider') {
-          e.stopPropagation();
-      }
+      e.stopPropagation();
   };
   
-  const { srcBefore, srcAfter } = element;
+  const handleImageSet = async (side: 'before' | 'after', file: File) => {
+    try {
+      const src = `data:${file.type};base64,${await fileToBase64(file)}`;
+      const img = new Image();
+      img.onload = () => {
+        const updates = side === 'before' 
+          ? { srcBefore: src, intrinsicWidthBefore: img.width, intrinsicHeightBefore: img.height }
+          : { srcAfter: src, intrinsicWidthAfter: img.width, intrinsicHeightAfter: img.height };
+        onUpdateElements([{ id: element.id, data: updates }]);
+      };
+      img.src = src;
+    } catch (error) {
+      console.error("Failed to load image for comparison:", error);
+    }
+  };
+
+  const { id, srcBefore, srcAfter } = element;
+  const isReady = srcBefore && srcAfter;
+
+  if (!isReady) {
+    return (
+        <div className="w-full h-full relative select-none flex flex-col bg-gray-900/50 rounded-lg overflow-hidden border border-gray-700 p-4 gap-4" onMouseDown={handleMouseDown}>
+            <p className="text-center text-sm text-gray-300 absolute top-2 left-1/2 -translate-x-1/2">左右各放一張圖來比較</p>
+            <div className="flex-1 flex gap-4 h-full">
+                <div className="w-1/2 h-full flex items-center justify-center">
+                    {srcBefore ? 
+                        <img src={srcBefore} className="max-w-full max-h-full object-contain rounded-md" alt="Before" /> : 
+                        <UploadArea 
+                            title="放入「之前」的圖片" 
+                            onImageSet={(f) => handleImageSet('before', f)} 
+                            onCameraClick={() => onTriggerCameraForCompare(id, 'before')}
+                            onPasteClick={() => onTriggerPasteForCompare(id, 'before')}
+                        />
+                    }
+                </div>
+                <div className="w-1/2 h-full flex items-center justify-center">
+                    {srcAfter ? 
+                        <img src={srcAfter} className="max-w-full max-h-full object-contain rounded-md" alt="After" /> : 
+                        <UploadArea 
+                            title="放入「之後」的圖片" 
+                            onImageSet={(f) => handleImageSet('after', f)} 
+                            onCameraClick={() => onTriggerCameraForCompare(id, 'after')}
+                            onPasteClick={() => onTriggerPasteForCompare(id, 'after')}
+                        />
+                    }
+                </div>
+            </div>
+        </div>
+    );
+  }
 
   return (
     <div className="w-full h-full relative select-none flex flex-col bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
@@ -36,13 +146,13 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element }) => {
           onClick={(e) => { e.stopPropagation(); setMode('result'); }}
           className={`px-3 py-1 rounded-full ${mode === 'result' ? 'bg-gray-600 text-white' : 'text-gray-300'}`}
         >
-          Result
+          結果
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); setMode('slider'); }}
           className={`px-3 py-1 rounded-full ${mode === 'slider' ? 'bg-orange-500 text-white' : 'text-gray-300'}`}
         >
-          Slider
+          滑桿
         </button>
       </div>
 

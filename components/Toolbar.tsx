@@ -1,5 +1,5 @@
 import React from 'react';
-import { StickyNote, Image, Pen, Camera, MousePointer, Hand, ZoomIn, ZoomOut, Redo, Undo, ArrowUpRight, ClipboardPaste, Maximize, Focus, Frame, ChevronUp } from 'lucide-react';
+import { StickyNote, Image, Pen, Camera, MousePointer, Hand, ZoomIn, ZoomOut, Redo, Undo, ArrowUpRight, ClipboardPaste, Maximize, Focus, Frame, ChevronUp, GitCompare } from 'lucide-react';
 
 export type Tool = 'select' | 'pan' | 'arrow';
 
@@ -11,6 +11,7 @@ interface ToolbarProps {
   onAddNote: () => void;
   onAddImage: () => void;
   onAddPlaceholder: () => void;
+  onAddImageCompare: () => void;
   onPaste: () => void;
   onDraw: () => void;
   onCamera: () => void;
@@ -39,7 +40,7 @@ const IconButton: React.FC<{ active?: boolean, onClick: () => void, children: Re
 );
 
 export const Toolbar: React.FC<ToolbarProps> = ({
-  isOpen, setIsOpen, activeTool, onToolChange, onAddNote, onAddImage, onAddPlaceholder, onPaste, onDraw, onCamera,
+  isOpen, setIsOpen, activeTool, onToolChange, onAddNote, onAddImage, onAddPlaceholder, onAddImageCompare, onPaste, onDraw, onCamera,
   canUndo, onUndo, canRedo, onRedo, zoom, onZoomChange, onFitScreen, onCenterView
 }) => {
   return (
@@ -66,6 +67,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <IconButton title="新增便籤 (N)" onClick={onAddNote}><StickyNote size={20} /></IconButton>
                 <IconButton title="新增箭頭 (A)" active={activeTool === 'arrow'} onClick={() => onToolChange('arrow')}><ArrowUpRight size={20} /></IconButton>
                 <IconButton title="新增圖片 (I)" onClick={onAddImage}><Image size={20} /></IconButton>
+                <IconButton title="新增圖片比較" onClick={onAddImageCompare}><GitCompare size={20} /></IconButton>
                 <IconButton title="從剪貼簿貼上 (Cmd+V)" onClick={onPaste}><ClipboardPaste size={20} /></IconButton>
                 <IconButton title="繪圖 (D)" onClick={onDraw}><Pen size={20} /></IconButton>
                 <IconButton title="攝像頭 (C)" onClick={onCamera}><Camera size={20} /></IconButton>

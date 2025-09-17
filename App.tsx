@@ -104,6 +104,7 @@ export const App: React.FC = () => {
   const [croppingElement, setCroppingElement] = useState<ImageElement | DrawingElement | null>(null);
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
   const [placeholderTarget, setPlaceholderTarget] = useState<string | null>(null);
+  const [imageCompareTarget, setImageCompareTarget] = useState<{ elementId: string; side: 'before' | 'after' } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('Generating...');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -848,6 +849,26 @@ export const App: React.FC = () => {
     } as Omit<PlaceholderElement, 'id' | 'zIndex'>);
 };
 
+const addImageCompare = () => {
+    const center = screenToCanvasCoords({ x: canvasSize.width / 2, y: canvasSize.height / 2 });
+    const width = 600;
+    const height = 400;
+    
+    addElement({
+        type: 'imageCompare',
+        position: { x: center.x - width / 2, y: center.y - height / 2 },
+        width, 
+        height, 
+        rotation: 0,
+        srcBefore: '',
+        intrinsicWidthBefore: 0,
+        intrinsicHeightBefore: 0,
+        srcAfter: '',
+        intrinsicWidthAfter: 0,
+        intrinsicHeightAfter: 0,
+    });
+};
+
   const handleImageFile = async (file: File | null, position?: Point, autoInspire = false) => {
     if (!file || !file.type.startsWith('image/')) return;
     
@@ -1562,9 +1583,6 @@ export const App: React.FC = () => {
   };
 
     const handleCameraCapture = async (dataUrl: string, bgOption: 'transparent' | 'green', placeholderId: string | null = null) => {
-      if (!placeholderId) {
-        setIsTakingPhoto(false);
-      }
       try {
           setIsGenerating(true);
           setGenerationStatus('正在智慧處理中...');
@@ -1595,48 +1613,48 @@ export const App: React.FC = () => {
           
           const finalSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
           
-          const img = new Image();
-          img.onload = () => {
-            if (placeholderId) {
-                const placeholder = elements.find(el => el.id === placeholderId);
-                if (placeholder && placeholder.type === 'placeholder') {
-                    const newImageElement: ImageElement = {
-                        id: placeholder.id,
-                        type: 'image',
-                        position: placeholder.position,
-                        width: placeholder.width,
-                        height: placeholder.width / (img.width / img.height),
-                        rotation: placeholder.rotation,
-                        zIndex: placeholder.zIndex,
-                        groupId: placeholder.groupId,
-                        src: finalSrc,
-                        intrinsicWidth: img.width,
-                        intrinsicHeight: img.height,
-                        meta: { autoInspire: true },
-                    };
-                    setElements(prev => prev.map(el => el.id === placeholderId ? newImageElement : el));
-                    setSelectedElementIds([placeholderId]);
-                }
-            } else {
-                const center = screenToCanvasCoords({ x: canvasSize.width / 2, y: canvasSize.height / 2 });
-                const aspectRatio = img.width / img.height;
-                const width = canvasSize.width / 4 / viewport.zoom;
-                const height = width / aspectRatio;
-                addElement({
-                    type: 'image',
-                    src: finalSrc,
-                    intrinsicWidth: img.width,
-                    intrinsicHeight: img.height,
-                    meta: { autoInspire: true },
-                    position: { x: center.x - width / 2, y: center.y - height / 2 },
-                    width,
-                    height,
-                    rotation: 0,
-                });
-            }
-          };
-          img.src = finalSrc;
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const i = new Image();
+              i.onload = () => resolve(i);
+              i.onerror = reject;
+              i.src = finalSrc;
+          });
 
+          if (imageCompareTarget) {
+              const { elementId, side } = imageCompareTarget;
+              const updates: Partial<ImageCompareElement> = side === 'before'
+                  ? { srcBefore: finalSrc, intrinsicWidthBefore: img.width, intrinsicHeightBefore: img.height }
+                  : { srcAfter: finalSrc, intrinsicWidthAfter: img.width, intrinsicHeightAfter: img.height };
+              updateElements([{ id: elementId, data: updates }]);
+          } else if (placeholderId) {
+              const placeholder = elements.find(el => el.id === placeholderId);
+              if (placeholder && placeholder.type === 'placeholder') {
+                  const newImageElement: ImageElement = {
+                      id: placeholder.id, type: 'image',
+                      position: placeholder.position,
+                      width: placeholder.width,
+                      height: placeholder.width / (img.width / img.height),
+                      rotation: placeholder.rotation, zIndex: placeholder.zIndex,
+                      groupId: placeholder.groupId, src: finalSrc,
+                      intrinsicWidth: img.width, intrinsicHeight: img.height,
+                      meta: { autoInspire: true },
+                  };
+                  setElements(prev => prev.map(el => el.id === placeholderId ? newImageElement : el));
+                  setSelectedElementIds([placeholderId]);
+              }
+          } else {
+              const center = screenToCanvasCoords({ x: canvasSize.width / 2, y: canvasSize.height / 2 });
+              const aspectRatio = img.width / img.height;
+              const width = canvasSize.width / 4 / viewport.zoom;
+              const height = width / aspectRatio;
+              addElement({
+                  type: 'image', src: finalSrc,
+                  intrinsicWidth: img.width, intrinsicHeight: img.height,
+                  meta: { autoInspire: true },
+                  position: { x: center.x - width / 2, y: center.y - height / 2 },
+                  width, height, rotation: 0,
+              });
+          }
       } catch (error) {
           console.error("Camera Processing Error:", error);
           alert(`處理攝像頭影像時發生錯誤: ${error instanceof Error ? error.message : String(error)}`);
@@ -1644,6 +1662,45 @@ export const App: React.FC = () => {
           setIsGenerating(false);
       }
   };
+    
+    const handleTriggerCameraForCompare = (elementId: string, side: 'before' | 'after') => {
+        setImageCompareTarget({ elementId, side });
+        setIsTakingPhoto(true);
+    };
+
+    const handleTriggerPasteForCompare = async (elementId: string, side: 'before' | 'after') => {
+        try {
+            if (!navigator.clipboard?.read) {
+                alert('您的瀏覽器不支援此功能。');
+                return;
+            }
+            const clipboardItems = await navigator.clipboard.read();
+            for (const item of clipboardItems) {
+                const imageType = item.types.find(type => type.startsWith('image/'));
+                if (imageType) {
+                    const blob = await item.getType(imageType);
+                    const file = new File([blob], 'pasted_image.png', { type: imageType });
+                    
+                    const src = `data:${file.type};base64,${await fileToBase64(file)}`;
+                    const img = new Image();
+                    img.onload = () => {
+                        const updates: Partial<ImageCompareElement> = side === 'before'
+                            ? { srcBefore: src, intrinsicWidthBefore: img.width, intrinsicHeightBefore: img.height }
+                            : { srcAfter: src, intrinsicWidthAfter: img.width, intrinsicHeightAfter: img.height };
+                        updateElements([{ id: elementId, data: updates }]);
+                    };
+                    img.src = src;
+
+                    return;
+                }
+            }
+            alert('剪貼簿中沒有找到圖片。');
+        } catch (err) {
+            console.error('Failed to paste for compare:', err);
+            alert('無法從剪貼簿貼上。這可能是瀏覽器安全限制所致。');
+        }
+    };
+
 
   const replacePlaceholderWithImage = async (placeholderId: string, file: File) => {
     const placeholder = elements.find(el => el.id === placeholderId);
@@ -2697,6 +2754,8 @@ ${directive}
                 lockedGroupIds={lockedGroupIds}
                 singlySelectedIdInGroup={singlySelectedIdInGroup}
                 isAnimationActive={isAnimationActive}
+                onTriggerCameraForCompare={handleTriggerCameraForCompare}
+                onTriggerPasteForCompare={handleTriggerPasteForCompare}
             />
             <svg className="absolute inset-0 pointer-events-none" style={{ width: canvasSize.width, height: canvasSize.height }}>
                 <defs>
@@ -2739,6 +2798,7 @@ ${directive}
                 onAddNote={addNote}
                 onAddImage={addImageFromUpload}
                 onAddPlaceholder={addPlaceholder}
+                onAddImageCompare={addImageCompare}
                 onPaste={handlePasteFromClipboard}
                 onDraw={() => setIsDrawing(true)}
                 onCamera={() => setIsTakingPhoto(true)}
@@ -2853,10 +2913,12 @@ ${directive}
                     handleCameraCapture(dataUrl, bgOption, placeholderTarget);
                     setIsTakingPhoto(false);
                     if (placeholderTarget) setPlaceholderTarget(null);
+                    if (imageCompareTarget) setImageCompareTarget(null);
                 }}
                 onClose={() => {
                     setIsTakingPhoto(false);
                     if (placeholderTarget) setPlaceholderTarget(null);
+                    if (imageCompareTarget) setImageCompareTarget(null);
                 }}
             />}
             

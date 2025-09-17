@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect, forwardRef } from 'react';
-import type { CanvasElement, Point, Viewport, ArrowElement } from '../types';
+import type { CanvasElement, Point, Viewport, ArrowElement, ImageCompareElement } from '../types';
 import { TransformableElement, ScreenToCanvasFn } from './TransformableElement';
 import { getElementsBounds } from '../utils';
 
@@ -24,6 +24,8 @@ interface InfiniteCanvasProps {
   lockedGroupIds: Set<string>;
   singlySelectedIdInGroup: string | null;
   isAnimationActive: boolean;
+  onTriggerCameraForCompare: (elementId: string, side: 'before' | 'after') => void;
+  onTriggerPasteForCompare: (elementId: string, side: 'before' | 'after') => void;
 }
 
 const intersects = (rect1: {minX: number, minY: number, maxX: number, maxY: number}, rect2: {minX: number, minY: number, maxX: number, maxY: number}) => {
@@ -33,7 +35,8 @@ const intersects = (rect1: {minX: number, minY: number, maxX: number, maxY: numb
 export const InfiniteCanvas = forwardRef<HTMLDivElement, InfiniteCanvasProps>(({
   elements, viewport, onViewportChange, onUpdateElements, onCommitHistory, onAddElement, onAltDragDuplicate, onReplacePlaceholder,
   selectedElementIds, onSelectElements, onDoubleClickElement, activeTool, onToolChange, isDraggingOver,
-  isConnecting, drawingArrow, onDrawingArrowChange, lockedGroupIds, singlySelectedIdInGroup, isAnimationActive
+  isConnecting, drawingArrow, onDrawingArrowChange, lockedGroupIds, singlySelectedIdInGroup, isAnimationActive,
+  onTriggerCameraForCompare, onTriggerPasteForCompare
 }, ref) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -524,13 +527,12 @@ export const InfiniteCanvas = forwardRef<HTMLDivElement, InfiniteCanvasProps>(({
         const dy = end.y - start.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance > 5) {
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
             onAddElement({
                 type: 'arrow',
                 position: start,
                 width: distance,
                 height: 20,
-                rotation: angle,
+                rotation: Math.atan2(dy, dx) * (180 / Math.PI),
                 color: '#f43f5e',
                 strokeWidth: 12,
             });
@@ -635,6 +637,8 @@ export const InfiniteCanvas = forwardRef<HTMLDivElement, InfiniteCanvasProps>(({
                 onDoubleClick={() => onDoubleClickElement(element.id)}
                 lockedGroupIds={lockedGroupIds}
                 screenToCanvas={screenToCanvas}
+                onTriggerCameraForCompare={onTriggerCameraForCompare}
+                onTriggerPasteForCompare={onTriggerPasteForCompare}
               />
             ))}
         </div>

@@ -20,13 +20,16 @@ interface TransformableElementProps {
     onDoubleClick: () => void;
     lockedGroupIds: Set<string>;
     screenToCanvas: ScreenToCanvasFn;
+    onTriggerCameraForCompare: (elementId: string, side: 'before' | 'after') => void;
+    onTriggerPasteForCompare: (elementId: string, side: 'before' | 'after') => void;
 }
 
 type TransformMode = 'translate' | 'resize' | 'rotate' | 'resize-arrow-start' | 'resize-arrow-end' | null;
 type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br';
 
 export const TransformableElement: React.FC<TransformableElementProps> = ({
-    element, elements, viewport, isSelected, isDeepSelected, onSelect, onUpdateElements, onCommitHistory, onAltDragDuplicate, onReplacePlaceholder, onDoubleClick, lockedGroupIds, screenToCanvas
+    element, elements, viewport, isSelected, isDeepSelected, onSelect, onUpdateElements, onCommitHistory, onAltDragDuplicate, onReplacePlaceholder, onDoubleClick, lockedGroupIds, screenToCanvas,
+    onTriggerCameraForCompare, onTriggerPasteForCompare
 }) => {
     const [mode, setMode] = useState<TransformMode>(null);
     const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null);
@@ -43,7 +46,7 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
     const handleMouseDown = (e: React.MouseEvent) => {
         e.stopPropagation();
 
-        if (element.type === 'placeholder') {
+        if (element.type === 'placeholder' || (element.type === 'imageCompare' && (!element.srcBefore || !element.srcAfter))) {
             onSelect([element.id], e.shiftKey || e.metaKey || e.ctrlKey);
         } else {
              onSelect([element.id], e.shiftKey || e.metaKey || e.ctrlKey);
@@ -127,7 +130,7 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
             let newY = startElement.position.y;
             
             let maintainAspectRatio = true;
-            if (element.type === 'note' || element.type === 'placeholder') {
+            if (element.type === 'note' || element.type === 'placeholder' || element.type === 'imageCompare') {
                 maintainAspectRatio = false;
             }
 
@@ -238,13 +241,20 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
             case 'drawing': return <DrawingContent element={element} />;
             case 'arrow': return <ArrowContent element={element} />;
             case 'placeholder': return <PlaceholderContent onImageSet={(file) => onReplacePlaceholder(element.id, file)} />;
-            case 'imageCompare': return <ImageCompare element={element} />;
+            case 'imageCompare': return <ImageCompare 
+                element={element}
+                onUpdateElements={onUpdateElements}
+                onTriggerCameraForCompare={onTriggerCameraForCompare}
+                onTriggerPasteForCompare={onTriggerPasteForCompare}
+            />;
             default: return null;
         }
     };
     
     const renderAspectRatio = () => {
         if (element.type !== 'image' && element.type !== 'drawing' && element.type !== 'imageCompare') return null;
+        if (element.type === 'imageCompare' && (!element.srcBefore || !element.srcAfter)) return null;
+
 
         let w: number;
         let h: number;
@@ -299,7 +309,9 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
         height: element.height,
         transform: `rotate(${element.rotation}deg)`,
         zIndex: element.zIndex,
-        cursor: element.type === 'placeholder' ? 'default' : (isLocked && !isDeepSelected) ? 'grab' : isSelected ? 'move' : 'pointer',
+        cursor: element.type === 'placeholder' || (element.type === 'imageCompare' && (!element.srcBefore || !element.srcAfter))
+            ? 'default' 
+            : (isLocked && !isDeepSelected) ? 'grab' : isSelected ? 'move' : 'pointer',
         transformOrigin: element.type === 'arrow' ? 'left center' : 'center center',
     };
 
@@ -348,10 +360,10 @@ export const TransformableElement: React.FC<TransformableElementProps> = ({
             data-element-id={element.id}
             data-group-id={element.groupId}
             style={elementStyle}
-            onMouseDown={element.type === 'placeholder' ? undefined : handleMouseDown}
+            onMouseDown={ (element.type === 'placeholder' || (element.type === 'imageCompare' && (!element.srcBefore || !element.srcAfter))) ? undefined : handleMouseDown}
             onDoubleClick={onDoubleClick}
         >
-            <div className="relative w-full h-full" onMouseDown={element.type === 'placeholder' ? handleMouseDown : undefined}>
+            <div className="relative w-full h-full" onMouseDown={(element.type === 'placeholder' || (element.type === 'imageCompare' && (!element.srcBefore || !element.srcAfter))) ? handleMouseDown : undefined}>
                 {renderElementContent()}
                 {renderAspectRatio()}
             </div>
