@@ -59,8 +59,8 @@ const UploadArea: React.FC<{
             >
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                 <ImagePlus size={24} className="mx-auto mb-2" />
-                <p className="text-sm font-semibold">{title}</p>
-                <p className="text-xs mt-1">拖放或點擊上傳</p>
+                <p className="text-lg font-semibold">{title}</p>
+                <p className="text-base mt-1">拖放或點擊上傳</p>
             </div>
             <div className="flex-shrink-0 flex items-center gap-2 p-2 border-t border-dashed border-gray-600 w-full justify-center">
                 <button title="攝像頭" onClick={(e) => { e.stopPropagation(); onCameraClick(); }} className="p-2 hover:bg-slate-700 rounded-lg"><Camera size={18} /></button>
@@ -110,7 +110,7 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
   if (!isReady) {
     return (
         <div className="w-full h-full relative select-none flex flex-col bg-gray-900/50 rounded-lg overflow-hidden border border-gray-700 p-4 gap-4" onMouseDown={handleMouseDown}>
-            <p className="text-center text-sm text-gray-300 absolute top-2 left-1/2 -translate-x-1/2">左右各放一張圖來比較</p>
+            <p className="text-center text-lg text-gray-300 absolute top-2 left-1/2 -translate-x-1/2">左右各放一張圖來比較</p>
             <div className="flex-1 flex gap-4 h-full">
                 <div className="w-1/2 h-full flex items-center justify-center">
                     {srcBefore ? 
@@ -164,8 +164,8 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
           onMouseMove={handleMouseMove}
         >
           <img
-            src={srcBefore}
-            alt="Before"
+            src={srcAfter}
+            alt="After"
             className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
             draggable={false}
           />
@@ -174,8 +174,8 @@ export const ImageCompare: React.FC<ImageCompareProps> = ({ element, onUpdateEle
             style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
           >
             <img
-              src={srcAfter}
-              alt="After"
+              src={srcBefore}
+              alt="Before"
               className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
               draggable={false}
             />

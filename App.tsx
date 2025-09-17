@@ -2131,6 +2131,8 @@ const handleFillPlaceholderFromPaste = async (placeholderId: string) => {
             setIsDrawing(true);
         } else if (e.key === 'c') {
             setIsTakingPhoto(true);
+        } else if (e.key.toLowerCase() === 'x') {
+            addImageCompare();
         } else if (e.key === 'a') {
             setActiveTool('arrow');
         }
@@ -2813,8 +2815,11 @@ ${directive}
             />
             
             <FloatingToolbar 
+                elements={elements}
                 selectedElements={selectedElements}
                 viewport={viewport}
+                canvasSize={canvasSize}
+                screenToCanvas={screenToCanvasCoords}
                 prompts={prompts}
                 onPromptsChange={setPrompts}
                 aspectRatios={aspectRatios}
@@ -2825,7 +2830,8 @@ ${directive}
                 onDuplicate={() => duplicateElements(selectedElementIds)}
                 onBringToFront={() => reorderElements('front', selectedElementIds)}
                 onSendToBack={() => reorderElements('back', selectedElementIds)}
-                onUpdateElement={(id, data) => updateElements([{id, data}])}
+                onUpdateElements={(updates) => updateElements(updates, false)}
+                onCommitHistory={handleCommitHistory}
                 onCrop={() => {
                     const el = selectedElements[0];
                     if (el && (el.type === 'image' || el.type === 'drawing')) setCroppingElement(el);

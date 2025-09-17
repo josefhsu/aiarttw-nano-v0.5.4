@@ -13,8 +13,11 @@ export const rotatePoint = (point: Point, center: Point, angle: number): Point =
   const radians = (Math.PI / 180) * angle;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
-  const nx = (cos * (point.x - center.x)) + (sin * (point.y - center.y)) + center.x;
-  const ny = (cos * (point.y - center.y)) - (sin * (point.x - center.x)) + center.y;
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  // Standard counter-clockwise rotation formula, which correctly handles clockwise rotation in a Y-down coordinate system.
+  const nx = (cos * dx) - (sin * dy) + center.x;
+  const ny = (sin * dx) + (cos * dy) + center.y;
   return { x: nx, y: ny };
 };
 
